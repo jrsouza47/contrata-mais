@@ -128,6 +128,7 @@ model Organizacao {
   estruturasHierarquia  EstruturaHierarquia[]
 
   tiposDocumento TipoDocumento[]
+  unidadesMedida UnidadeMedida[]
 
   planosPca            PlanoContratacaoAnual[]
   dfds                 Dfd[]
@@ -959,6 +960,21 @@ model ItemCategoria {
   categoria Categoria    @relation(fields: [idCategoria], references: [id])
 
   @@map("item_categoria")
+}
+
+model UnidadeMedida {
+  id            String   @id @default(uuid())
+  idOrganizacao String   @map("id_organizacao")
+  nome          String
+  sigla         String
+  ativo         Boolean  @default(true)
+  criadoEm      DateTime @default(now()) @map("criado_em")
+  atualizadoEm  DateTime @updatedAt @map("atualizado_em")
+
+  organizacao Organizacao @relation(fields: [idOrganizacao], references: [id], onDelete: Cascade)
+
+  @@unique([idOrganizacao, sigla])
+  @@map("unidade_medida")
 }
 
 model TipoDocumento {

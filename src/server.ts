@@ -28,6 +28,7 @@ import { notificacoesRoutes } from './modules/notificacoes/notificacoes.routes'
 import { filialRoutes } from './modules/filial/filial.routes'
 import { grupoRoutes } from './modules/grupo/grupo.routes'
 import { tipoDocumentoRoutes } from './modules/tipo-documento/tipo-documento.routes'
+import { unidadeMedidaRoutes } from './modules/unidade-medida/unidade-medida.routes'
 import { analiseCplRoutes } from './modules/analise-cpl/analise-cpl.routes'
 import { definicaoContratacaoRoutes } from './modules/definicao-contratacao/definicao-contratacao.routes'
 import { editalRoutes } from './modules/edital/edital.routes'
@@ -80,6 +81,7 @@ app.register(notificacoesRoutes)
 app.register(filialRoutes)
 app.register(grupoRoutes)
 app.register(tipoDocumentoRoutes)
+app.register(unidadeMedidaRoutes)
 app.register(analiseCplRoutes)
 app.register(definicaoContratacaoRoutes)
 app.register(editalRoutes)
