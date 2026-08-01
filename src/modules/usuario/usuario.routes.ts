@@ -142,6 +142,31 @@ export async function usuarioRoutes(app: FastifyInstance) {
       alcadaValor?: number
       ativo?: boolean
     }
+
+    // Se e-mail foi enviado, verificar se já existe em OUTRO usuário
+    if (body.email) {
+      const emailLimpo = body.email.toLowerCase().trim()
+      const existente = await prisma.usuario.findFirst({
+        where: { email: emailLimpo, NOT: { id } }
+      })
+      if (existente) {
+        return reply.status(400).send({ error: 'E-mail já cadastrado para outro usuário' })
+      }
+      body.email = emailLimpo
+    }
+
+    // Normalizar login
+    if (body.login) {
+      const loginLimpo = body.login.toLowerCase().trim()
+      const existenteLogin = await prisma.usuario.findFirst({
+        where: { login: loginLimpo, NOT: { id } }
+      })
+      if (existenteLogin) {
+        return reply.status(400).send({ error: 'Login/apelido já cadastrado para outro usuário' })
+      }
+      body.login = loginLimpo
+    }
+
     const usuario = await prisma.usuario.update({
       where: { id },
       data: body,
