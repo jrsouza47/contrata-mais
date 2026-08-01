@@ -81,6 +81,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
       idOrganizacao: string
       nome: string
       email: string
+      login?: string | null
       perfil: string
       alcadaValor?: number
     }
@@ -106,6 +107,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
         idOrganizacao: body.idOrganizacao,
         nome: body.nome,
         email: body.email.toLowerCase().trim(),
+        login: body.login?.trim().toLowerCase() || null,
         perfil: body.perfil,
         alcadaValor: body.alcadaValor ?? null,
         senhaHash,
@@ -135,6 +137,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
     const body = request.body as {
       nome?: string
       email?: string
+      login?: string | null
       perfil?: string
       alcadaValor?: number
       ativo?: boolean
@@ -143,20 +146,6 @@ export async function usuarioRoutes(app: FastifyInstance) {
       where: { id },
       data: body,
     })
-
-    // O login lê o perfil do vínculo (usuario_organizacao), não daqui —
-    // então mantém os dois sincronizados sempre que perfil/alçada mudam,
-    // ou o usuário continua com o perfil antigo mesmo após logout/login.
-    if (body.perfil !== undefined || body.alcadaValor !== undefined) {
-      await prisma.usuarioOrganizacao.updateMany({
-        where: { idUsuario: id },
-        data: {
-          ...(body.perfil !== undefined ? { perfil: body.perfil } : {}),
-          ...(body.alcadaValor !== undefined ? { alcadaValor: body.alcadaValor } : {}),
-        },
-      })
-    }
-
     return reply.send(usuario)
   })
 
