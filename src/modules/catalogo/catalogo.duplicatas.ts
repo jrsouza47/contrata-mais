@@ -27,7 +27,7 @@ function calcularSimilaridade(a: string, b: string): number {
 
 export async function detectarDuplicatas(idOrganizacao: string) {
   const itens = await prisma.itemCatalogo.findMany({
-    where: { idOrganizacao, status: { not: 'Inativo' as any } },
+    where: { idOrganizacao, status: { not: 4 } }, // 4 = Inativo
     select: {
       id: true,
       nome: true,
@@ -89,7 +89,7 @@ export async function verificarDuplicataAoCadastrar(
   nomePretendido: string
 ): Promise<{ temSimilar: boolean; itensSimilares: Array<{ id: string; nome: string; codigoInterno: string }> }> {
   const itens = await prisma.itemCatalogo.findMany({
-    where: { idOrganizacao, status: { not: 'Inativo' as any } },
+    where: { idOrganizacao, status: { not: 4 } }, // 4 = Inativo
     select: { id: true, nome: true, codigoInterno: true }
   })
 
