@@ -8,7 +8,8 @@ import {
   atualizarItem,
   atualizarStatusItem,
   registrarPreco,
-  listarCategorias
+  listarCategorias,
+  excluirItem
 } from './catalogo.service'
 
 export async function catalogoRoutes(app: FastifyInstance) {
@@ -166,6 +167,21 @@ export async function catalogoRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'organizacaoId é obrigatório' })
     }
     return listarCategorias(organizacaoId)
+  })
+
+  // DELETE /itens/:id — exclui item se não estiver em uso em nenhum lugar do sistema
+  app.delete('/itens/:id', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { organizacaoId } = request.query as { organizacaoId: string }
+    if (!organizacaoId) {
+      return reply.status(400).send({ error: 'organizacaoId é obrigatório' })
+    }
+    try {
+      const resultado = await excluirItem(id, organizacaoId)
+      return resultado
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message })
+    }
   })
 
   // POST /itens/:id/preco — registrar preço de referência

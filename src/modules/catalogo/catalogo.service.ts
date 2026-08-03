@@ -133,6 +133,44 @@ export async function listarCategorias(organizacaoId: string) {
   })
 }
 
+export async function excluirItem(id: string, organizacaoId: string) {
+  const item = await prisma.itemCatalogo.findFirst({ where: { id, idOrganizacao: organizacaoId } })
+  if (!item) throw new Error('Item não encontrado')
+
+  // Verifica uso real do item em outros lugares do sistema antes de excluir
+  // de verdade — não faz sentido apagar um item que já foi usado num pedido,
+  // cotação, contrato ou no PCA (quebraria o histórico).
+  const [emPedido, emCotacao, emContrato, emItemPca, emDfd, comoSucessor] = await Promise.all([
+    prisma.itemPedido.count({ where: { idItem: id } }),
+    prisma.itemCotacao.count({ where: { idItem: id } }),
+    prisma.itemContrato.count({ where: { idItem: id } }),
+    prisma.itemPca.count({ where: { idItemCatalogo: id } }),
+    prisma.dfd.count({ where: { idItemCatalogo: id } }),
+    prisma.itemCatalogo.count({ where: { idItemSucessor: id } })
+  ])
+
+  const totalUso = emPedido + emCotacao + emContrato + emItemPca + emDfd + comoSucessor
+  if (totalUso > 0) {
+    return {
+      excluido: false as const,
+      motivo: 'em_uso' as const,
+      detalhes: { emPedido, emCotacao, emContrato, emItemPca, emDfd, comoSucessor }
+    }
+  }
+
+  // Sem uso em nenhum lugar — pode excluir de verdade, limpando os
+  // registros que são só metadado do próprio item (preço, auditoria, de-para)
+  await prisma.$transaction([
+    prisma.precoReferencia.deleteMany({ where: { idItem: id } }),
+    prisma.auditoriaItem.deleteMany({ where: { idItem: id } }),
+    prisma.deParaItemSistemaCorporativo.deleteMany({ where: { idItemCatalogo: id } }),
+    prisma.itemCategoria.deleteMany({ where: { idItem: id } }),
+    prisma.itemCatalogo.delete({ where: { id } })
+  ])
+
+  return { excluido: true as const }
+}
+
 export async function atualizarStatusItem(
   id: string,
   organizacaoId: string,
