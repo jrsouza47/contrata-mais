@@ -8,6 +8,7 @@ import {
   CancelarPedidoInput,
   AtualizarPedidoInput,
 } from './pedido.schema'
+import { reservar, ajustarReserva, devolver } from '../pca/saldo-item-pca.service'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Domínio de status — M2 Pedido de Compra
@@ -16,8 +17,8 @@ import {
 // 2  = Cadastrado        (= "Submetido" no doc v2; bloqueia edição, aguarda aprovação)
 // 3  = Em Aprovação      (fluxo de alçadas ativo)
 // 4  = Aprovado          (todos os níveis aprovaram)
-// 5  = Reprovado         (qualquer nível reprovou)
-// 6  = Cancelado         (cancelado pelo solicitante; permitido nos status 1, 2, 3)
+// 5  = Cancelado         (cancelado pelo solicitante; permitido nos status 1, 2, 3)
+// 6  = Reprovado         (qualquer nível reprovou — definitivo, não reabre)
 // 7  = Encaminhado       (comprador definiu destino: Cotação ou Licitação)
 // 8  = Em Cotação        (M3 assumiu — portal apenas exibe)
 // 9  = Licitação         (M7 enviou para Sistema de Licitação — portal apenas exibe)
@@ -133,6 +134,9 @@ export async function previewNumeroPedido(idOrganizacao: string): Promise<string
 }
 
 // ── Criar pedido (status 1 = Rascunho) ───────────────────────────────────────
+// Reserva a quantidade solicitada no saldo do Item do PCA vinculado. Se não
+// houver saldo disponível, a criação inteira é cancelada (transação) — o
+// pedido não fica "meio criado" sem reserva.
 export async function criarPedido(data: CriarPedidoInput) {
   const { itens, idItemPca, justificativaForaJanela, ...pedidoData } = data
 
@@ -147,27 +151,45 @@ export async function criarPedido(data: CriarPedidoInput) {
       acc + i.quantidade * i.precoUnitario,
     0
   )
+  const quantidadeTotalPedido = itens.reduce(
+    (acc: number, i: CriarPedidoInput['itens'][0]) => acc + Number(i.quantidade),
+    0
+  )
 
-  return prisma.pedido.create({
-    data: {
-      ...pedidoData,
-      idItemPca,
-      foraDaJanelaPca,
-      justificativaForaJanelaPca: justificativaForaJanela,
-      numero: await gerarNumeroPedido(pedidoData.idOrganizacao),
-      valorTotal,
-      status: 1,
-      itens: {
-        create: itens.map((i: CriarPedidoInput['itens'][0]) => ({
-          idItem: i.idItem,
-          quantidade: i.quantidade,
-          precoUnitario: i.precoUnitario,
-          subtotal: i.quantidade * i.precoUnitario,
-          observacao: i.observacao,
-        })),
+  return prisma.$transaction(async (tx) => {
+    const pedido = await tx.pedido.create({
+      data: {
+        ...pedidoData,
+        idItemPca,
+        foraDaJanelaPca,
+        justificativaForaJanelaPca: justificativaForaJanela,
+        numero: await gerarNumeroPedido(pedidoData.idOrganizacao),
+        valorTotal,
+        status: 1,
+        itens: {
+          create: itens.map((i: CriarPedidoInput['itens'][0]) => ({
+            idItem: i.idItem,
+            quantidade: i.quantidade,
+            precoUnitario: i.precoUnitario,
+            subtotal: i.quantidade * i.precoUnitario,
+            observacao: i.observacao,
+          })),
+        },
       },
-    },
-    include: { itens: true },
+      include: { itens: true },
+    })
+
+    // Lança erro (e desfaz a criação acima) se não houver saldo suficiente
+    await reservar({
+      idOrganizacao: pedidoData.idOrganizacao,
+      idItemPca,
+      idPedido: pedido.id,
+      quantidade: quantidadeTotalPedido,
+      idUsuario: pedidoData.idSolicitante,
+      tx: tx as any,
+    })
+
+    return pedido
   })
 }
 
@@ -205,7 +227,12 @@ export async function buscarPedido(id: string) {
       },
       solicitante: { select: { id: true, nome: true, email: true, perfil: true } },
       centroCusto: { select: { id: true, codigo: true, descricao: true } },
-      itemPca: { select: { id: true, numero: true, descricaoObjeto: true } },
+      itemPca: {
+        select: {
+          id: true, numero: true, descricaoObjeto: true,
+          plano: { select: { ano: true, versao: true } },
+        },
+      },
       analisesCpl: {
         orderBy: { criadoEm: 'desc' },
         take: 1,
@@ -269,6 +296,9 @@ export async function submeterPedido(id: string, data: SubmeterPedidoInput) {
 }
 
 // ── Decidir pedido (3 → 4 Aprovado | 3 → 5 Reprovado) ───────────────────────
+// Reprovado é definitivo (não reabre para edição — se precisar refazer, o
+// solicitante cria um pedido novo), mas devolve o saldo reservado no Item
+// do PCA, já que a compra nunca chegou a acontecer.
 export async function decidirPedido(id: string, data: DecidirPedidoInput) {
   const pedido = await prisma.pedido.findUnique({ where: { id } })
   if (!pedido) throw new Error('Pedido não encontrado')
@@ -287,42 +317,46 @@ export async function decidirPedido(id: string, data: DecidirPedidoInput) {
   if (!alcada) throw new Error('Alçada de aprovação não configurada para Pedido')
 
   const decisaoInt = data.decisao === 'Aprovado' ? 1 : 2
+  const novoStatus = decisaoInt === 2 ? 6 /* Reprovado */ : 4 /* Aprovado */
 
-  await prisma.aprovacaoPedido.create({
-    data: {
-      idPedido: id,
-      idAlcada: alcada.id,
-      idAprovador: data.idAprovador,
-      nivel: pedido.nivelAtual,
-      decisao: decisaoInt,
-      justificativa: data.justificativa,
-    },
+  return prisma.$transaction(async (tx) => {
+    await tx.aprovacaoPedido.create({
+      data: {
+        idPedido: id,
+        idAlcada: alcada.id,
+        idAprovador: data.idAprovador,
+        nivel: pedido.nivelAtual,
+        decisao: decisaoInt,
+        justificativa: data.justificativa,
+      },
+    })
+
+    const pedidoAtualizado = await tx.pedido.update({
+      where: { id },
+      data: { status: novoStatus, nivelAtual: pedido.nivelAtual },
+    })
+
+    await tx.auditoriaPedido.create({
+      data: {
+        idPedido: id,
+        acao: data.decisao,
+        usuarioId: data.idAprovador,
+        valorDepois: String(novoStatus),
+      },
+    })
+
+    if (decisaoInt === 2) {
+      await devolver({
+        idOrganizacao: pedido.idOrganizacao,
+        idPedido: id,
+        idUsuario: data.idAprovador,
+        observacao: `Pedido reprovado na alçada — ${data.justificativa ?? ''}`.trim(),
+        tx: tx as any,
+      })
+    }
+
+    return pedidoAtualizado
   })
-
-  let novoStatus = pedido.status
-  const novoNivel = pedido.nivelAtual
-
-  if (decisaoInt === 2) {
-    novoStatus = 5 // Reprovado
-  } else {
-    novoStatus = 4 // Aprovado (fluxo simples — sem níveis múltiplos no schema atual)
-  }
-
-  const pedidoAtualizado = await prisma.pedido.update({
-    where: { id },
-    data: { status: novoStatus, nivelAtual: novoNivel },
-  })
-
-  await prisma.auditoriaPedido.create({
-    data: {
-      idPedido: id,
-      acao: data.decisao,
-      usuarioId: data.idAprovador,
-      valorDepois: String(novoStatus),
-    },
-  })
-
-  return pedidoAtualizado
 }
 
 // ── Encaminhar pedido aprovado (4 → 7) ───────────────────────────────────────
@@ -372,47 +406,79 @@ export async function atualizarPedido(id: string, data: AtualizarPedidoInput) {
 
   // Recalcula valor total se itens forem enviados
   let valorTotal = Number(pedido.valorTotal)
-  if (itens && itens.length > 0) {
-    valorTotal = itens.reduce((acc, i) => acc + i.quantidade * i.precoUnitario, 0)
-    // Remove itens antigos e recria
-    await prisma.itemPedido.deleteMany({ where: { idPedido: id } })
-    await prisma.itemPedido.createMany({
-      data: itens.map(i => ({
-        idPedido: id,
-        idItem: i.idItem,
-        quantidade: i.quantidade,
-        precoUnitario: i.precoUnitario,
-        subtotal: i.quantidade * i.precoUnitario,
-        observacao: i.observacao,
-      })),
-    })
-  }
+  const itensMudaram = !!(itens && itens.length > 0)
+  const itemPcaMudou = idItemPca !== undefined && idItemPca !== pedido.idItemPca
 
-  return prisma.pedido.update({
-    where: { id },
-    data: {
-      ...(idCentroCusto !== undefined ? { idCentroCusto } : {}),
-      ...(idAlcada      !== undefined ? { idAlcada      } : {}),
-      ...(criticidade   !== undefined ? { criticidade   } : {}),
-      ...(justificativa !== undefined ? { justificativa } : {}),
-      ...(observacao    !== undefined ? { observacao    } : {}),
-      ...(tipoPedido    !== undefined ? { tipoPedido    } : {}),
-      ...(idItemPca     !== undefined ? { idItemPca, foraDaJanelaPca, justificativaForaJanelaPca: justificativaForaJanela } : {}),
-      valorTotal,
-    },
-    include: {
-      itens: { include: { item: true } },
-      solicitante: { select: { id: true, nome: true, email: true, perfil: true } },
-      centroCusto: { select: { id: true, codigo: true, descricao: true } },
-      analisesCpl: {
-        orderBy: { criadoEm: 'desc' },
-        take: 1,
-        select: {
-          motivoTexto: true,
-          statusResultado: true,
+  return prisma.$transaction(async (tx) => {
+    if (itensMudaram) {
+      valorTotal = itens!.reduce((acc, i) => acc + i.quantidade * i.precoUnitario, 0)
+      // Remove itens antigos e recria
+      await tx.itemPedido.deleteMany({ where: { idPedido: id } })
+      await tx.itemPedido.createMany({
+        data: itens!.map(i => ({
+          idPedido: id,
+          idItem: i.idItem,
+          quantidade: i.quantidade,
+          precoUnitario: i.precoUnitario,
+          subtotal: i.quantidade * i.precoUnitario,
+          observacao: i.observacao,
+        })),
+      })
+    }
+
+    // Se a quantidade dos itens mudou ou o vínculo com o PCA mudou, ajusta a
+    // reserva de saldo (devolve a anterior e reserva de novo com o total
+    // atual) — lança erro e desfaz tudo se o novo total não couber no saldo.
+    if (itensMudaram || itemPcaMudou) {
+      const itemPcaFinal = idItemPca ?? pedido.idItemPca
+      if (itemPcaFinal) {
+        const quantidadeFinal = itensMudaram
+          ? itens!.reduce((acc, i) => acc + Number(i.quantidade), 0)
+          : (await tx.itemPedido.aggregate({ where: { idPedido: id }, _sum: { quantidade: true } }))._sum.quantidade ?? 0
+
+        await ajustarReserva({
+          idOrganizacao: pedido.idOrganizacao,
+          idPedido: id,
+          novoIdItemPca: itemPcaFinal,
+          novaQuantidade: Number(quantidadeFinal),
+          idUsuario: pedido.idSolicitante,
+          tx: tx as any,
+        })
+      }
+    }
+
+    return tx.pedido.update({
+      where: { id },
+      data: {
+        ...(idCentroCusto !== undefined ? { idCentroCusto } : {}),
+        ...(idAlcada      !== undefined ? { idAlcada      } : {}),
+        ...(criticidade   !== undefined ? { criticidade   } : {}),
+        ...(justificativa !== undefined ? { justificativa } : {}),
+        ...(observacao    !== undefined ? { observacao    } : {}),
+        ...(tipoPedido    !== undefined ? { tipoPedido    } : {}),
+        ...(idItemPca     !== undefined ? { idItemPca, foraDaJanelaPca, justificativaForaJanelaPca: justificativaForaJanela } : {}),
+        valorTotal,
+      },
+      include: {
+        itens: { include: { item: true } },
+        solicitante: { select: { id: true, nome: true, email: true, perfil: true } },
+        centroCusto: { select: { id: true, codigo: true, descricao: true } },
+        itemPca: {
+          select: {
+            id: true, numero: true, descricaoObjeto: true,
+            plano: { select: { ano: true, versao: true } },
+          },
+        },
+        analisesCpl: {
+          orderBy: { criadoEm: 'desc' },
+          take: 1,
+          select: {
+            motivoTexto: true,
+            statusResultado: true,
+          },
         },
       },
-    },
+    })
   })
 }
 
@@ -484,7 +550,10 @@ export async function copiarPedido(id: string, idUsuario: string) {
   return novo
 }
 
-// ── Cancelar pedido (1,2,3 → 6) ──────────────────────────────────────────────
+// ── Cancelar pedido (1,2,3 → 5) ──────────────────────────────────────────────
+// Status 5 = Cancelado (confirmado pelo STATUS_LABEL do frontend). O código
+// original já estava certo aqui — devolve ao Item do PCA a quantidade que
+// estava reservada por este pedido.
 export async function cancelarPedido(id: string, data: CancelarPedidoInput) {
   const pedido = await prisma.pedido.findUnique({ where: { id } })
   if (!pedido) throw new Error('Pedido não encontrado')
@@ -494,23 +563,33 @@ export async function cancelarPedido(id: string, data: CancelarPedidoInput) {
     throw new Error('Pedido não pode ser cancelado neste status')
   }
 
-  const pedidoAtualizado = await prisma.pedido.update({
-    where: { id },
-    data: { status: 5 },
-  })
+  return prisma.$transaction(async (tx) => {
+    const pedidoAtualizado = await tx.pedido.update({
+      where: { id },
+      data: { status: 5 },
+    })
 
-  await prisma.auditoriaPedido.create({
-    data: {
+    await tx.auditoriaPedido.create({
+      data: {
+        idPedido: id,
+        acao: 'Cancelado',
+        valorAntes: String(pedido.status),
+        valorDepois: data.motivo,
+        usuarioId: data.idUsuario,
+        campo: 'motivo',
+      },
+    })
+
+    await devolver({
+      idOrganizacao: pedido.idOrganizacao,
       idPedido: id,
-      acao: 'Cancelado',
-      valorAntes: String(pedido.status),
-      valorDepois: data.motivo,
-      usuarioId: data.idUsuario,
-      campo: 'motivo',
-    },
-  })
+      idUsuario: data.idUsuario,
+      observacao: `Pedido cancelado — ${data.motivo}`,
+      tx: tx as any,
+    })
 
-  return pedidoAtualizado
+    return pedidoAtualizado
+  })
 }
 
 // ── Devolver pedido para ajuste (3,4,5 → 12) ─────────────────────────────────
