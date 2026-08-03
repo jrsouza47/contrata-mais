@@ -80,7 +80,12 @@ export async function listarTodasOrganizacoesComLicencas() {
     orderBy: { nome: 'asc' },
   })
 
-  const resultado = []
+  const resultado: Array<{
+    id: string
+    nome: string
+    slug: string | null
+    licencas: Awaited<ReturnType<typeof listarLicencasDaOrganizacao>>
+  }> = []
   for (const org of organizacoes) {
     const licencas = await listarLicencasDaOrganizacao(org.id)
     resultado.push({ ...org, licencas })
