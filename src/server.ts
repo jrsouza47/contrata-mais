@@ -34,6 +34,8 @@ import { definicaoContratacaoRoutes } from './modules/definicao-contratacao/defi
 import { editalRoutes } from './modules/edital/edital.routes'
 import { pcaRoutes } from './modules/pca/pca.routes'
 import { integracaoErpRoutes } from './modules/integracao-erp/integracao-erp.routes'
+import { licenciamentoRoutes } from './modules/licenciamento/licenciamento.routes'
+import { exigirModulo } from './modules/licenciamento/licenciamento.middleware'
 
 const app = Fastify({ logger: true, bodyLimit: 52428800 })
 
@@ -43,10 +45,16 @@ app.register(fastifyCors, {
 })
 app.register(fastifyMultipart)
 app.register(authRoutes)
+app.register(licenciamentoRoutes)
 app.register(cotacaoRoutes)
 app.register(portalRoutes)
-app.register(contratoRoutes)
-app.register(negociacaoRoutes)
+
+// M6 — Contratos e Entregas (licenciado por organização)
+app.register(async (instance) => {
+  instance.addHook('preHandler', exigirModulo('M6_CONTRATOS'))
+  await instance.register(contratoRoutes)
+  await instance.register(negociacaoRoutes)
+})
 
 app.addContentTypeParser('application/json', { parseAs: 'string' }, function (req, body, done) {
   try {
@@ -60,16 +68,36 @@ app.get('/health', async () => {
   return { status: 'ok', projeto: 'Portal de Compras API', versao: '2.0.0' }
 })
 
-app.register(catalogoRoutes)
-app.register(catalogoImportacaoRoutes)
-app.register(catalogoDuplicatasRoutes)
-app.register(catalogoCatmatRoutes)
+// M1 — Catálogo (licenciado por organização)
+app.register(async (instance) => {
+  instance.addHook('preHandler', exigirModulo('M1_CATALOGO'))
+  await instance.register(catalogoRoutes)
+  await instance.register(catalogoImportacaoRoutes)
+  await instance.register(catalogoDuplicatasRoutes)
+  await instance.register(catalogoCatmatRoutes)
+})
+
 app.register(configuracoesRoutes)
 app.register(hierarquiaRoutes)
 app.register(areaOrganizacionalRoutes)
-app.register(pedidoRoutes)
+
+// M2 — Pedidos de Compra (licenciado por organização)
+app.register(async (instance) => {
+  instance.addHook('preHandler', exigirModulo('M2_PEDIDOS'))
+  await instance.register(pedidoRoutes)
+})
+
 app.register(fornecedorRoutes)
-app.register(licitacaoRoutes)
+
+// M7 — Licitação (licenciado por organização)
+app.register(async (instance) => {
+  instance.addHook('preHandler', exigirModulo('M7_LICITACAO'))
+  await instance.register(licitacaoRoutes)
+  await instance.register(analiseCplRoutes)
+  await instance.register(definicaoContratacaoRoutes)
+  await instance.register(editalRoutes)
+})
+
 app.register(monitoramentoRoutes)
 app.register(fornecedorHistoricoRoutes)
 app.register(organizacaoRoutes)
@@ -82,10 +110,13 @@ app.register(filialRoutes)
 app.register(grupoRoutes)
 app.register(tipoDocumentoRoutes)
 app.register(unidadeMedidaRoutes)
-app.register(analiseCplRoutes)
-app.register(definicaoContratacaoRoutes)
-app.register(editalRoutes)
-app.register(pcaRoutes)
+
+// PCA — Plano de Contratações Anual (licenciado por organização)
+app.register(async (instance) => {
+  instance.addHook('preHandler', exigirModulo('PCA'))
+  await instance.register(pcaRoutes)
+})
+
 app.register(integracaoErpRoutes)
 
 const start = async () => {
