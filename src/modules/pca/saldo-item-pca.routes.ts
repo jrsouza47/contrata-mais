@@ -4,9 +4,21 @@
 // ============================================================
 
 import { FastifyInstance } from 'fastify'
-import { calcularSaldo, listarMovimentos } from './saldo-item-pca.service'
+import { calcularSaldo, listarMovimentos, obterSaldoPca } from './saldo-item-pca.service'
 
 export async function saldoItemPcaRoutes(app: FastifyInstance) {
+
+  // GET /pca/planos/:id/saldo?idOrganizacao= — itens + movimentos do plano inteiro
+  // (usado pela aba "Saldo / Movimentação" — uma chamada só, sem N+1)
+  app.get('/pca/planos/:id/saldo', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { idOrganizacao } = request.query as { idOrganizacao: string }
+    if (!idOrganizacao) return reply.status(400).send({ erro: 'idOrganizacao obrigatorio' })
+    try {
+      const resultado = await obterSaldoPca(idOrganizacao, id)
+      return reply.send(resultado)
+    } catch (err: any) { return reply.status(500).send({ erro: err.message }) }
+  })
 
   // GET /pca/itens/:id/saldo — total / reservado / utilizado / disponível
   app.get('/pca/itens/:id/saldo', async (request, reply) => {

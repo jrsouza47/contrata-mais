@@ -238,3 +238,57 @@ export async function listarMovimentos(idItemPca: string) {
     orderBy: { criadoEm: 'desc' },
   })
 }
+
+// ── Saldo + histórico do plano inteiro (Tela de monitoramento) ────────────
+// Traz, de uma vez: todos os itens do plano com seu saldo (total/reservado/
+// utilizado/disponível) e o ledger completo de movimentações, já com o item
+// (número/descrição) e o pedido (número/solicitante/centro de custo)
+// resolvidos — a tela não precisa fazer N chamadas, uma por item.
+export async function obterSaldoPca(idOrganizacao: string, idPlano: string) {
+  const [itens, movimentos] = await Promise.all([
+    prisma.itemPca.findMany({
+      where: { idOrganizacao, idPlano },
+      select: {
+        id: true, numero: true, descricaoObjeto: true,
+        quantidadeTotal: true, quantidadeReservada: true, quantidadeUtilizada: true,
+      },
+      orderBy: { numero: 'asc' },
+    }),
+    prisma.movimentoSaldoItemPca.findMany({
+      where: { idOrganizacao, itemPca: { idPlano } },
+      include: {
+        itemPca: { select: { id: true, numero: true, descricaoObjeto: true } },
+        pedido: {
+          select: {
+            numero: true,
+            solicitante: { select: { nome: true } },
+            centroCusto: { select: { codigo: true, descricao: true } },
+          },
+        },
+        proposta: {
+          select: {
+            convite: { select: { fornecedor: { select: { razaoSocial: true } } } },
+          },
+        },
+      },
+      orderBy: { criadoEm: 'desc' },
+    }),
+  ])
+
+  const itensComSaldo = itens.map((i) => {
+    const total = Number(i.quantidadeTotal)
+    const reservada = Number(i.quantidadeReservada)
+    const utilizada = Number(i.quantidadeUtilizada)
+    return {
+      id: i.id,
+      numero: i.numero,
+      descricaoObjeto: i.descricaoObjeto,
+      quantidadeTotal: total,
+      quantidadeReservada: reservada,
+      quantidadeUtilizada: utilizada,
+      quantidadeDisponivel: total - reservada - utilizada,
+    }
+  })
+
+  return { itens: itensComSaldo, movimentos }
+}
