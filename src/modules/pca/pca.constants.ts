@@ -114,6 +114,13 @@ export const STATUS_REVISAO = {
   REJEITADO: 'REJEITADO',
 } as const
 
+// Saldo do Item PCA — histórico/ledger de reserva, baixa e devolução
+export const TIPO_MOVIMENTO_SALDO = {
+  RESERVA:    'RESERVA',    // Pedido criado/editado, vinculado a um Item do PCA
+  BAIXA:      'BAIXA',      // Proposta vencedora homologada na Cotação (M3)
+  DEVOLUCAO:  'DEVOLUCAO',  // Pedido cancelado ou reprovado
+} as const
+
 export const TIPO_JANELA_REVISAO = {
   SET_NOV: 'SET_NOV', // 1-30/set ou 16-30/nov — automático
   POS_LDO: 'POS_LDO', // 15 dias após aprovação da LDO — data externa, não rastreada pelo sistema

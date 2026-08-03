@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import prisma from '../../shared/prisma'
+import { darBaixa } from '../pca/saldo-item-pca.service'
 
 // POST /cotacoes
 export async function criarCotacao(req: FastifyRequest, reply: FastifyReply) {
@@ -119,9 +120,18 @@ export async function quadroComparativo(req: FastifyRequest, reply: FastifyReply
 }
 
 // PATCH /cotacoes/:id/homologar
+// Ao homologar a proposta vencedora, dá baixa no saldo do Item do PCA
+// vinculado ao Pedido de origem: sai do "reservado" e entra em "utilizado",
+// registrando quantidade e o valor real negociado (subtotal da proposta).
+//
+// Observação (limitação atual, não introduzida por esta mudança): este
+// endpoint homologa UMA proposta por chamada e já marca a cotação inteira
+// como "Homologada" — cotações com mais de um item precisam ser revistas
+// separadamente (a segunda chamada falharia, pois o status deixa de ser
+// "Encerrada" após a primeira homologação).
 export async function homologarCotacao(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any
-  const { idProposta } = req.body as any
+  const { idProposta, idUsuario } = req.body as any
 
   const cotacao = await prisma.cotacao.findUnique({ where: { id } })
   if (!cotacao) return reply.status(404).send({ erro: 'Cotação não encontrada.' })
@@ -129,17 +139,44 @@ export async function homologarCotacao(req: FastifyRequest, reply: FastifyReply)
     return reply.status(400).send({ erro: 'A cotação precisa estar Encerrada para ser homologada.' })
   }
 
-  const proposta = await prisma.proposta.findUnique({ where: { id: idProposta } })
+  const proposta = await prisma.proposta.findUnique({
+    where: { id: idProposta },
+    include: { itemCotacao: true },
+  })
   if (!proposta) return reply.status(404).send({ erro: 'Proposta não encontrada.' })
 
-  await prisma.proposta.update({
-    where: { id: idProposta },
-    data: { homologada: true },
-  })
+  const [, atualizada] = await prisma.$transaction(async (tx) => {
+    const propostaAtualizada = await tx.proposta.update({
+      where: { id: idProposta },
+      data: { homologada: true },
+    })
 
-  const atualizada = await prisma.cotacao.update({
-    where: { id },
-    data: { status: 'Homologada' as any },
+    const cotacaoAtualizada = await tx.cotacao.update({
+      where: { id },
+      data: { status: 'Homologada' as any },
+    })
+
+    // Baixa no Item do PCA — só roda se a cotação veio de um Pedido vinculado
+    if (cotacao.idPedido) {
+      const pedido = await tx.pedido.findUnique({
+        where: { id: cotacao.idPedido },
+        select: { idItemPca: true },
+      })
+      if (pedido?.idItemPca) {
+        await darBaixa({
+          idOrganizacao: cotacao.idOrganizacao,
+          idItemPca: pedido.idItemPca,
+          idPedido: cotacao.idPedido,
+          idProposta,
+          quantidade: Number(proposta.itemCotacao.quantidade),
+          valorReal: Number(proposta.subtotal),
+          idUsuario,
+          tx: tx as any,
+        })
+      }
+    }
+
+    return [propostaAtualizada, cotacaoAtualizada]
   })
 
   return reply.send({ mensagem: 'Cotação homologada com sucesso.', cotacao: atualizada })

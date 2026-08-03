@@ -138,6 +138,7 @@ model Organizacao {
   revisoesPca          RevisaoPca[]
   relatoriosPca        RelatorioPca[]
   integracaoErp        IntegracaoErp?
+  movimentosSaldoPca   MovimentoSaldoItemPca[]
 
   @@map("organizacao")
 }
@@ -233,6 +234,7 @@ model Usuario {
   revisoesPcaAprovadas      RevisaoPca[]            @relation("RevisaoPcaAprovador")
   revisoesPcaSolicitadas    RevisaoPca[]            @relation("RevisaoPcaSolicitante")
   relatoriosPcaGerados      RelatorioPca[]
+  movimentosSaldoPca        MovimentoSaldoItemPca[]
 
   @@map("usuario")
 }
@@ -471,6 +473,7 @@ model Pedido {
   definicoesContratacao DefinicaoContratacao[]
   editalVersoes         EditalVersao[]
   editalComentarios     EditalComentario[]
+  movimentosSaldoPca    MovimentoSaldoItemPca[]
 
   @@unique([idOrganizacao, numero])
   @@index([idItemPca])
@@ -695,6 +698,7 @@ model Proposta {
 
   convite     ConviteCotacao @relation(fields: [idConvite], references: [id])
   itemCotacao ItemCotacao    @relation(fields: [idItemCotacao], references: [id])
+  movimentosSaldoPca MovimentoSaldoItemPca[]
 
   @@map("proposta")
 }
@@ -1348,6 +1352,14 @@ model ItemPca {
   unidadeFornecimento    String   @map("unidade_fornecimento")
   quantidadeTotal         Decimal  @default(0) @map("quantidade_total") @db.Decimal(15, 4) // soma das demandas agrupadas
   valorTotal               Decimal  @default(0) @map("valor_total") @db.Decimal(15, 2)       // soma das demandas agrupadas
+
+  // Saldo (controle de consumo) — diretriz nova: todo Pedido vinculado reserva
+  // quantidade aqui; a homologação da Proposta vencedora (M3) converte a
+  // reserva em utilizado; cancelamento/reprovação do Pedido devolve a reserva.
+  // Disponível = quantidadeTotal - quantidadeReservada - quantidadeUtilizada
+  // (calculado sempre em runtime, nunca gravado, pra nunca ficar desatualizado).
+  quantidadeReservada     Decimal  @default(0) @map("quantidade_reservada") @db.Decimal(15, 4)
+  quantidadeUtilizada     Decimal  @default(0) @map("quantidade_utilizada") @db.Decimal(15, 4)
   prioridade                 Int      @default(2) // maior prioridade entre as demandas de origem
   dataDesejada                 DateTime? @map("data_desejada") @db.Date // menor data desejada entre as origens
   idItemPcaDependencia           String?  @map("id_item_pca_dependencia") // auto-relação p/ calendário de licitação
@@ -1399,11 +1411,46 @@ model ItemPca {
   enviosPncp PncpEnvioPca[]
   pedidos    Pedido[]
   revisoes   RevisaoPca[]
+  movimentosSaldo MovimentoSaldoItemPca[]
 
   @@unique([idOrganizacao, numero])
   @@index([idPlano])
   @@index([status])
   @@map("item_pca")
+}
+
+// ── Movimentação de saldo do Item PCA (reserva / baixa / devolução) ─
+// Ledger auditável: toda vez que um Pedido é criado/editado (RESERVA),
+// tem a Proposta vencedora homologada na Cotação M3 (BAIXA), ou é
+// cancelado/reprovado (DEVOLUCAO), gera-se um registro aqui. O saldo do
+// item nunca é só um número solto — sempre dá pra reconstruir o "quem,
+// quando, quanto" a partir desta tabela.
+model MovimentoSaldoItemPca {
+  id            String   @id @default(uuid())
+  idOrganizacao String   @map("id_organizacao")
+  idItemPca     String   @map("id_item_pca")
+  idPedido      String   @map("id_pedido")
+  idProposta    String?  @map("id_proposta") // preenchido só em BAIXA — proposta homologada de origem
+
+  tipo       String  @map("tipo") // RESERVA | BAIXA | DEVOLUCAO
+  quantidade Decimal @db.Decimal(15, 4)
+  valorReal  Decimal? @map("valor_real") @db.Decimal(15, 2) // só em BAIXA — valor real negociado (subtotal da proposta)
+
+  observacao String? // motivo, quando fizer sentido (ex.: "Pedido reprovado na alçada")
+
+  idUsuario String?  @map("id_usuario") // quem disparou a ação (solicitante, aprovador, comprador...)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  organizacao Organizacao @relation(fields: [idOrganizacao], references: [id])
+  itemPca     ItemPca     @relation(fields: [idItemPca], references: [id])
+  pedido      Pedido      @relation(fields: [idPedido], references: [id])
+  proposta    Proposta?   @relation(fields: [idProposta], references: [id])
+  usuario     Usuario?    @relation(fields: [idUsuario], references: [id])
+
+  @@index([idItemPca])
+  @@index([idPedido])
+  @@index([tipo])
+  @@map("movimento_saldo_item_pca")
 }
 
 // ── Gestão de riscos (N hipóteses por Item PCA — diretriz 8.1.10) ─
