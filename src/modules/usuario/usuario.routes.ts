@@ -258,4 +258,97 @@ export async function usuarioRoutes(app: FastifyInstance) {
 
     return reply.send({ ok: true })
   })
+
+  // DELETE /usuarios/:id — exclui de verdade, só se o usuário não estiver
+  // referenciado em nenhum lugar do sistema (pedidos, aprovações, contratos,
+  // PCA, edital, auditoria etc.). Se estiver, bloqueia e sugere inativar —
+  // excluir de verdade apagaria o rastro de quem fez o quê no histórico.
+  app.delete('/usuarios/:id', async (request, reply) => {
+    const { id } = request.params as { id: string }
+
+    const usuario = await prisma.usuario.findUnique({ where: { id } })
+    if (!usuario) return reply.status(404).send({ error: 'Usuário não encontrado' })
+
+    const [
+      itensCriados, precosRegistrados, auditoriasItem,
+      pedidosSolicitados, aprovacoesPedido, auditoriasPedido, documentosPedido,
+      contratosFiscal, contratosCriador, entregasConfirmadas,
+      negociacoesIniciadas, ocorrenciasRegistradas, penalidadesAplicadas,
+      fracionamentosDetectados, estruturasCriadas,
+      analisesCpl, definicoesResponsavel, editalVersoes, editalComentarios,
+      planosPcaAprovados, dfdsSolicitados, sugestoesIaDecididas,
+      itensPcaConsolidados, itensPcaAprovados, itensPcaAprovadosNivel2, itensPcaExecucao,
+      riscosResponsavel, enviosPncpConferidos, enviosPncpCsvGerados,
+      revisoesPcaAprovadas, revisoesPcaSolicitadas, relatoriosPcaGerados,
+      movimentosSaldoPca,
+    ] = await Promise.all([
+      prisma.itemCatalogo.count({ where: { criadoPor: id } }),
+      prisma.precoReferencia.count({ where: { responsavelId: id } }),
+      prisma.auditoriaItem.count({ where: { usuarioId: id } }),
+      prisma.pedido.count({ where: { idSolicitante: id } }),
+      prisma.aprovacaoPedido.count({ where: { idAprovador: id } }),
+      prisma.auditoriaPedido.count({ where: { usuarioId: id } }),
+      prisma.documentoPedido.count({ where: { idUsuario: id } }),
+      prisma.contrato.count({ where: { idFiscal: id } }),
+      prisma.contrato.count({ where: { criadoPor: id } }),
+      prisma.entrega.count({ where: { confirmadoPor: id } }),
+      prisma.negociacao.count({ where: { iniciadorId: id } }),
+      prisma.ocorrenciaContrato.count({ where: { registradoPor: id } }),
+      prisma.penalidadeContrato.count({ where: { aplicadoPor: id } }),
+      prisma.logFracionamento.count({ where: { idSolicitante: id } }),
+      prisma.estruturaHierarquia.count({ where: { criadoPor: id } }),
+      prisma.analiseCpl.count({ where: { idAnalista: id } }),
+      prisma.definicaoContratacao.count({ where: { idResponsavel: id } }),
+      prisma.editalVersao.count({ where: { idUsuario: id } }),
+      prisma.editalComentario.count({ where: { idUsuario: id } }),
+      prisma.planoContratacaoAnual.count({ where: { idAprovador: id } }),
+      prisma.dfd.count({ where: { idSolicitante: id } }),
+      prisma.sugestaoIaDfd.count({ where: { idDecisorUsuario: id } }),
+      prisma.itemPca.count({ where: { idConsolidadoPor: id } }),
+      prisma.itemPca.count({ where: { idAprovador: id } }),
+      prisma.itemPca.count({ where: { idAprovadorIntermediario: id } }),
+      prisma.itemPca.count({ where: { atualizadoExecucaoPor: id } }),
+      prisma.riscoItemPca.count({ where: { idResponsavel: id } }),
+      prisma.pncpEnvioPca.count({ where: { idConferidoPor: id } }),
+      prisma.pncpEnvioPca.count({ where: { csvGeradoPor: id } }),
+      prisma.revisaoPca.count({ where: { idAprovador: id } }),
+      prisma.revisaoPca.count({ where: { idSolicitante: id } }),
+      prisma.relatorioPca.count({ where: { idGeradoPor: id } }),
+      prisma.movimentoSaldoItemPca.count({ where: { idUsuario: id } }),
+    ])
+
+    const detalhes = {
+      itensCriados, precosRegistrados, auditoriasItem,
+      pedidosSolicitados, aprovacoesPedido, auditoriasPedido, documentosPedido,
+      contratosFiscal, contratosCriador, entregasConfirmadas,
+      negociacoesIniciadas, ocorrenciasRegistradas, penalidadesAplicadas,
+      fracionamentosDetectados, estruturasCriadas,
+      analisesCpl, definicoesResponsavel, editalVersoes, editalComentarios,
+      planosPcaAprovados, dfdsSolicitados, sugestoesIaDecididas,
+      itensPcaConsolidados, itensPcaAprovados, itensPcaAprovadosNivel2, itensPcaExecucao,
+      riscosResponsavel, enviosPncpConferidos, enviosPncpCsvGerados,
+      revisoesPcaAprovadas, revisoesPcaSolicitadas, relatoriosPcaGerados,
+      movimentosSaldoPca,
+    }
+    const totalUso = Object.values(detalhes).reduce((a, b) => a + b, 0)
+
+    if (totalUso > 0) {
+      return reply.status(400).send({
+        error: 'Usuário está referenciado em registros do sistema e não pode ser excluído — use Inativar em vez de excluir.',
+        motivo: 'em_uso',
+        detalhes,
+      })
+    }
+
+    // Sem nenhum uso real — pode excluir de verdade. Antes, limpa os vínculos
+    // que são só configuração/associação (não são "histórico" de fato):
+    // membership de alçada, e substituição designada em outros usuários.
+    await prisma.$transaction([
+      prisma.alcadaUsuario.deleteMany({ where: { idUsuario: id } }),
+      prisma.usuario.updateMany({ where: { idSubstituto: id }, data: { idSubstituto: null } }),
+      prisma.usuario.delete({ where: { id } }), // usuario_organizacao e usuario_filial cascateiam
+    ])
+
+    return reply.send({ excluido: true })
+  })
 }
