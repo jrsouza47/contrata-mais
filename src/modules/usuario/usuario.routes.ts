@@ -46,6 +46,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
         login: true,
         perfil: true,
         alcadaValor: true,
+        idCentroCustoArea: true,
         ativo: true,
         criadoEm: true,
       },
@@ -65,8 +66,10 @@ export async function usuarioRoutes(app: FastifyInstance) {
         id: true,
         nome: true,
         email: true,
+        login: true,
         perfil: true,
         alcadaValor: true,
+        idCentroCustoArea: true,
         ativo: true,
         criadoEm: true,
         idOrganizacao: true,
@@ -85,6 +88,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
       login?: string | null
       perfil: string
       alcadaValor?: number
+      idCentroCustoArea?: string | null
     }
 
     if (!body.idOrganizacao || !body.nome || !body.email || !body.perfil) {
@@ -125,6 +129,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
         login: loginNormalizado,
         perfil: body.perfil,
         alcadaValor: body.alcadaValor ?? null,
+        idCentroCustoArea: body.idCentroCustoArea || null,
         senhaHash,
         trocarSenha: true,
       },
@@ -135,6 +140,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
         login: true,
         perfil: true,
         alcadaValor: true,
+        idCentroCustoArea: true,
         ativo: true,
         criadoEm: true,
       },
@@ -156,6 +162,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
       login?: string | null
       perfil?: string
       alcadaValor?: number
+      idCentroCustoArea?: string | null
       ativo?: boolean
     }
 

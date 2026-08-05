@@ -196,7 +196,15 @@ model Usuario {
   resetToken         String?   @map("reset_token")
   resetTokenExpira   DateTime? @map("reset_token_expira")
 
+  // Área/setor do usuário (Centro de Custo) — usada para restringir a
+  // visibilidade de Demandas/Itens do PCA a perfis Gestor, Solicitante e
+  // Operador. Perfis irrestritos (Administrador, Comprador, Aprovador,
+  // Auditor) ignoram este campo. Nulo = não vê nada nas telas restritas
+  // até ser configurado (padrão seguro).
+  idCentroCustoArea String? @map("id_centro_custo_area")
+
   organizacao                 Organizacao             @relation(fields: [idOrganizacao], references: [id])
+  centroCustoArea              CentroCusto?            @relation("UsuarioCentroCustoArea", fields: [idCentroCustoArea], references: [id])
   organizacoes                UsuarioOrganizacao[]
   substituto                  Usuario?                @relation("Substituto", fields: [idSubstituto], references: [id])
   substituidos                Usuario[]               @relation("Substituto")
@@ -293,6 +301,7 @@ model CentroCusto {
   organizacao Organizacao @relation(fields: [idOrganizacao], references: [id])
   pedidos     Pedido[]
   dfds        Dfd[]
+  usuariosArea Usuario[] @relation("UsuarioCentroCustoArea")
 
   @@unique([idOrganizacao, codigoBenner])
   @@map("centro_custo")
@@ -1430,10 +1439,10 @@ model MovimentoSaldoItemPca {
   id            String   @id @default(uuid())
   idOrganizacao String   @map("id_organizacao")
   idItemPca     String   @map("id_item_pca")
-  idPedido      String?  @map("id_pedido") // nulo em CRIACAO (item ainda não tem pedido nenhum)
+  idPedido      String   @map("id_pedido")
   idProposta    String?  @map("id_proposta") // preenchido só em BAIXA — proposta homologada de origem
 
-  tipo       String  @map("tipo") // CRIACAO | RESERVA | BAIXA | DEVOLUCAO
+  tipo       String  @map("tipo") // RESERVA | BAIXA | DEVOLUCAO
   quantidade Decimal @db.Decimal(15, 4)
   valorReal  Decimal? @map("valor_real") @db.Decimal(15, 2) // só em BAIXA — valor real negociado (subtotal da proposta)
 
@@ -1444,7 +1453,7 @@ model MovimentoSaldoItemPca {
 
   organizacao Organizacao @relation(fields: [idOrganizacao], references: [id])
   itemPca     ItemPca     @relation(fields: [idItemPca], references: [id])
-  pedido      Pedido?     @relation(fields: [idPedido], references: [id])
+  pedido      Pedido      @relation(fields: [idPedido], references: [id])
   proposta    Proposta?   @relation(fields: [idProposta], references: [id])
   usuario     Usuario?    @relation(fields: [idUsuario], references: [id])
 
