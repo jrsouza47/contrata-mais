@@ -1439,10 +1439,10 @@ model MovimentoSaldoItemPca {
   id            String   @id @default(uuid())
   idOrganizacao String   @map("id_organizacao")
   idItemPca     String   @map("id_item_pca")
-  idPedido      String   @map("id_pedido")
+  idPedido      String?  @map("id_pedido") // nulo em CRIACAO (item ainda não tem pedido nenhum)
   idProposta    String?  @map("id_proposta") // preenchido só em BAIXA — proposta homologada de origem
 
-  tipo       String  @map("tipo") // RESERVA | BAIXA | DEVOLUCAO
+  tipo       String  @map("tipo") // CRIACAO | RESERVA | BAIXA | DEVOLUCAO
   quantidade Decimal @db.Decimal(15, 4)
   valorReal  Decimal? @map("valor_real") @db.Decimal(15, 2) // só em BAIXA — valor real negociado (subtotal da proposta)
 
@@ -1453,7 +1453,7 @@ model MovimentoSaldoItemPca {
 
   organizacao Organizacao @relation(fields: [idOrganizacao], references: [id])
   itemPca     ItemPca     @relation(fields: [idItemPca], references: [id])
-  pedido      Pedido      @relation(fields: [idPedido], references: [id])
+  pedido      Pedido?     @relation(fields: [idPedido], references: [id])
   proposta    Proposta?   @relation(fields: [idProposta], references: [id])
   usuario     Usuario?    @relation(fields: [idUsuario], references: [id])
 
