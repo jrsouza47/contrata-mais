@@ -116,6 +116,7 @@ export const STATUS_REVISAO = {
 
 // Saldo do Item PCA — histórico/ledger de reserva, baixa e devolução
 export const TIPO_MOVIMENTO_SALDO = {
+  CRIACAO:    'CRIACAO',    // Item do PCA criado na Consolidação — saldo total planejado
   RESERVA:    'RESERVA',    // Pedido criado/editado, vinculado a um Item do PCA
   BAIXA:      'BAIXA',      // Proposta vencedora homologada na Cotação (M3)
   DEVOLUCAO:  'DEVOLUCAO',  // Pedido cancelado ou reprovado

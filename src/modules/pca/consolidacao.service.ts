@@ -5,7 +5,7 @@
 // ============================================================
 
 import prisma from '../../shared/prisma'
-import { DFD_STATUS, ITEM_PCA_STATUS } from './pca.constants'
+import { DFD_STATUS, ITEM_PCA_STATUS, TIPO_MOVIMENTO_SALDO } from './pca.constants'
 
 interface ConsolidarInput {
   idOrganizacao: string
@@ -123,6 +123,20 @@ export async function consolidarDemandas(input: ConsolidarInput) {
         await tx.dfd.updateMany({
           where: { id: { in: input.idsDfd } },
           data: { idItemPca: item.id, status: DFD_STATUS.CONSOLIDADO },
+        })
+
+        // Registra no ledger o saldo total planejado no momento da criação —
+        // sem isso, o histórico de movimentação fica vazio até o primeiro
+        // Pedido ser feito, mesmo o item já existindo com quantidade prevista.
+        await tx.movimentoSaldoItemPca.create({
+          data: {
+            idOrganizacao: input.idOrganizacao,
+            idItemPca: item.id,
+            tipo: TIPO_MOVIMENTO_SALDO.CRIACAO,
+            quantidade: quantidadeTotal,
+            idUsuario: input.idUsuarioConsolidador,
+            observacao: `Item criado na consolidação de ${input.idsDfd.length} demanda(s)`,
+          },
         })
 
         return item
