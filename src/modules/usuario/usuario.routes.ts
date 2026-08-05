@@ -99,6 +99,20 @@ export async function usuarioRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'E-mail já cadastrado no sistema' })
     }
 
+    // Verifica se login/apelido já existe — campo é único no sistema inteiro,
+    // não só dentro da organização. Checagem explícita aqui pra não deixar o
+    // erro estourar como violação de constraint no banco (que caía no
+    // tratador genérico e mostrava a mensagem de e-mail por engano).
+    const loginNormalizado = body.login?.trim().toLowerCase() || null
+    if (loginNormalizado) {
+      const loginExistente = await prisma.usuario.findFirst({
+        where: { login: loginNormalizado }
+      })
+      if (loginExistente) {
+        return reply.status(400).send({ error: 'Login/apelido já cadastrado. Use outro apelido de acesso.' })
+      }
+    }
+
     // Gera senha inicial
     const senhaInicial = gerarSenhaInicial()
     const senhaHash = await bcrypt.hash(senhaInicial, 10)
@@ -108,7 +122,7 @@ export async function usuarioRoutes(app: FastifyInstance) {
         idOrganizacao: body.idOrganizacao,
         nome: body.nome,
         email: body.email.toLowerCase().trim(),
-        login: body.login?.trim().toLowerCase() || null,
+        login: loginNormalizado,
         perfil: body.perfil,
         alcadaValor: body.alcadaValor ?? null,
         senhaHash,
