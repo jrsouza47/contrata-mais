@@ -109,6 +109,9 @@ export async function usuarioRoutes(app: FastifyInstance) {
     // tratador genérico e mostrava a mensagem de e-mail por engano).
     const loginNormalizado = body.login?.trim().toLowerCase() || null
     if (loginNormalizado) {
+      if (loginNormalizado.length > 15) {
+        return reply.status(400).send({ error: 'Login/apelido não pode ter mais de 15 caracteres.' })
+      }
       const loginExistente = await prisma.usuario.findFirst({
         where: { login: loginNormalizado }
       })
@@ -181,6 +184,9 @@ export async function usuarioRoutes(app: FastifyInstance) {
     // Normalizar login
     if (body.login) {
       const loginLimpo = body.login.toLowerCase().trim()
+      if (loginLimpo.length > 15) {
+        return reply.status(400).send({ error: 'Login/apelido não pode ter mais de 15 caracteres.' })
+      }
       const existenteLogin = await prisma.usuario.findFirst({
         where: { login: loginLimpo, NOT: { id } }
       })
