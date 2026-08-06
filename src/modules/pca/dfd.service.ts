@@ -6,6 +6,7 @@
 import prisma from '../../shared/prisma'
 import { DFD_STATUS, CAMPOS_MINIMOS_ENVIO_DFD, dentroJanelaEnvioDfd } from './pca.constants'
 import { gerarSugestoesParaDfd } from './sugestao-ia.service'
+import { obterEscopoCentroCusto } from './escopo-area.service'
 
 interface CriarDfdInput {
   idOrganizacao: string
@@ -199,12 +200,32 @@ export async function listarDfdsUnidade(idOrganizacao: string, filtros: {
   idCentroCusto?: string
   idSolicitante?: string
   status?: number
+  idUsuario?: string // usuário logado — usado só pra calcular o escopo de área (Gestor/Solicitante/Operador)
 }) {
+  // Se a busca já é por um solicitante específico (fluxo "minhas demandas"
+  // do Solicitante/Operador), não aplica o filtro de área por cima — assim
+  // essas pessoas continuam vendo o que elas mesmas criaram mesmo que a
+  // área ainda não esteja configurada pra elas. O filtro de área só entra
+  // quando não há um solicitante específico sendo pedido (caso do Gestor,
+  // que precisa ver a área inteira, não só o que ele mesmo criou).
+  const escopo = filtros.idSolicitante ? null : await obterEscopoCentroCusto(filtros.idUsuario)
+
+  // Combina o filtro manual de centro de custo (se houver) com o escopo de
+  // área do usuário — nunca deixa o filtro manual escapar do escopo.
+  let idCentroCustoCondicao: any = filtros.idCentroCusto
+  if (escopo !== null) {
+    if (filtros.idCentroCusto) {
+      idCentroCustoCondicao = escopo.includes(filtros.idCentroCusto) ? filtros.idCentroCusto : '__fora_do_escopo__'
+    } else {
+      idCentroCustoCondicao = { in: escopo }
+    }
+  }
+
   return prisma.dfd.findMany({
     where: {
       idOrganizacao,
       idPlano: filtros.idPlano,
-      idCentroCusto: filtros.idCentroCusto,
+      idCentroCusto: idCentroCustoCondicao,
       idSolicitante: filtros.idSolicitante,
       status: filtros.status,
     },

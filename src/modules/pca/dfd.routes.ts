@@ -11,16 +11,17 @@ import {
 
 export async function dfdRoutes(app: FastifyInstance) {
 
-  // GET /pca/dfd?idOrganizacao=&idPlano=&idCentroCusto=&idSolicitante=&status=
+  // GET /pca/dfd?idOrganizacao=&idPlano=&idCentroCusto=&idSolicitante=&status=&idUsuario=
   app.get('/pca/dfd', async (request, reply) => {
-    const { idOrganizacao, idPlano, idCentroCusto, idSolicitante, status } = request.query as {
-      idOrganizacao: string; idPlano?: string; idCentroCusto?: string; idSolicitante?: string; status?: string
+    const { idOrganizacao, idPlano, idCentroCusto, idSolicitante, status, idUsuario } = request.query as {
+      idOrganizacao: string; idPlano?: string; idCentroCusto?: string; idSolicitante?: string; status?: string; idUsuario?: string
     }
     if (!idOrganizacao) return reply.status(400).send({ erro: 'idOrganizacao obrigatorio' })
     try {
       const demandas = await listarDfdsUnidade(idOrganizacao, {
         idPlano, idCentroCusto, idSolicitante,
         status: status ? Number(status) : undefined,
+        idUsuario,
       })
       return reply.send({ total: demandas.length, demandas })
     } catch (err: any) { return reply.status(500).send({ erro: err.message }) }

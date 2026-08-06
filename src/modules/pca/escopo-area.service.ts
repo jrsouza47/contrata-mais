@@ -22,15 +22,20 @@ export const PERFIS_RESTRITOS_POR_AREA = ['Gestor', 'Solicitante', 'Operador']
  *
  * Perfil restrito sem área configurada => retorna [] (não vê nada — padrão
  * seguro, evita vazar dados por esquecimento de configuração).
+ *
+ * Recebe só o idUsuario — busca o perfil internamente, assim as rotas não
+ * precisam saber/repassar o perfil, só quem está logado.
  */
-export async function obterEscopoCentroCusto(idUsuario: string, perfil: string): Promise<string[] | null> {
-  if (!PERFIS_RESTRITOS_POR_AREA.includes(perfil)) return null
+export async function obterEscopoCentroCusto(idUsuario: string | undefined): Promise<string[] | null> {
+  if (!idUsuario) return null // sem usuário informado, não filtra (compatibilidade)
 
   const usuario = await prisma.usuario.findUnique({
     where: { id: idUsuario },
-    select: { idCentroCustoArea: true, idOrganizacao: true },
+    select: { perfil: true, idCentroCustoArea: true, idOrganizacao: true },
   })
-  if (!usuario?.idCentroCustoArea) return []
+  if (!usuario) return null
+  if (!PERFIS_RESTRITOS_POR_AREA.includes(usuario.perfil)) return null
+  if (!usuario.idCentroCustoArea) return []
 
   const centroBase = await prisma.centroCusto.findUnique({
     where: { id: usuario.idCentroCustoArea },
