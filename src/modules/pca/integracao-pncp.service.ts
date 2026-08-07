@@ -7,11 +7,18 @@
 // "Gerar CSV" NUNCA depende disso e continua sempre habilitado — ver
 // pncp.service.ts / marcarCsvGerado.
 //
-// IMPORTANTE: o dbliciti ainda NÃO tem credenciais/token oficiais do
-// PNCP (mesma situação do tokenId do Benner). `publicarViaApiPncp` já
-// está com toda a estrutura pronta (leitura da config, descriptografia
-// do token, atualização de status) — falta só o `chamarApiPncp` real.
-// Enquanto isso, a função lança um erro claro em vez de fingir sucesso.
+// COMO O PNCP AUTENTICA (Manual de Integração PNCP): não existe token
+// fixo. A Terracap precisa se credenciar junto ao Ministério da Gestão
+// e recebe LOGIN + SENHA. A cada sessão, o dbliciti autentica em
+// POST {PNCP_BASE_URL}/v1/usuarios/login com esse login/senha e recebe
+// um JWT (Bearer) de curta duração no header Authorization da resposta.
+// Esse JWT é cacheado aqui (tokenJwtCache/tokenJwtExpiraEm) até expirar,
+// pra não logar de novo a cada publicação.
+//
+// IMPORTANTE: o dbliciti ainda NÃO tem login/senha oficiais do PNCP
+// (mesma situação do tokenId do Benner). Toda a estrutura já está
+// pronta — falta só `chamarLoginPncp` e `chamarPublicarPncp` de verdade.
+// Enquanto isso, essas funções lançam erro claro em vez de fingir sucesso.
 // ============================================================
 
 import prisma from '../../shared/prisma'
@@ -20,16 +27,16 @@ import { PNCP_ENVIO_STATUS, PNCP_METODO_ENVIO } from './pca.constants'
 
 interface SalvarIntegracaoPncpInput {
   ativo: boolean
-  idContratante?: string
-  token?: string // texto puro vindo do formulário — nunca persistido assim
+  loginPncp?: string
+  senha?: string // texto puro vindo do formulário — nunca persistido assim
 }
 
-// Nunca devolve o token — só sinaliza se já está configurado
+// Nunca devolve a senha nem o JWT cacheado — só sinaliza se já está configurada
 function paraApresentacao(registro: any) {
-  const { tokenCriptografado, ...resto } = registro
+  const { senhaCriptografada, tokenJwtCache, ...resto } = registro
   return {
     ...resto,
-    tokenConfigurado: !!tokenCriptografado,
+    senhaConfigurada: !!senhaCriptografada,
   }
 }
 
@@ -37,7 +44,7 @@ export async function buscarIntegracaoPncp(idOrganizacao: string) {
   const registro = await prisma.integracaoPncp.findUnique({ where: { idOrganizacao } })
   if (!registro) {
     // Sem registro ainda = toggle desligado por padrão (default seguro)
-    return { idOrganizacao, ativo: false, idContratante: null, tokenConfigurado: false }
+    return { idOrganizacao, ativo: false, loginPncp: null, senhaConfigurada: false }
   }
   return paraApresentacao(registro)
 }
@@ -50,9 +57,11 @@ export async function salvarIntegracaoPncp(idOrganizacao: string, input: SalvarI
 
   const dados = {
     ativo: input.ativo,
-    idContratante: input.idContratante?.trim() || null,
+    loginPncp: input.loginPncp?.trim() || null,
     // Só recriptografa se algo novo foi digitado — campo vazio mantém o valor anterior
-    ...(input.token ? { tokenCriptografado: criptografar(input.token) } : {}),
+    ...(input.senha ? { senhaCriptografada: criptografar(input.senha) } : {}),
+    // Login/senha novos invalidam qualquer JWT cacheado da credencial anterior
+    ...(input.senha || input.loginPncp !== undefined ? { tokenJwtCache: null, tokenJwtExpiraEm: null } : {}),
   }
 
   const registro = existente
@@ -62,17 +71,43 @@ export async function salvarIntegracaoPncp(idOrganizacao: string, input: SalvarI
   return paraApresentacao(registro)
 }
 
-// ── Placeholder da chamada real à API do PNCP ─────────────────────────────
-// Ponto único a substituir quando o token oficial existir. Hoje lança erro
-// de propósito — nunca deve fingir que publicou algo no PNCP de verdade.
-async function chamarApiPncp(_params: {
-  idContratante: string
-  token: string
+// ── Placeholders das chamadas reais ao PNCP ────────────────────────────────
+// Pontos únicos a substituir quando login/senha oficiais existirem. Hoje
+// lançam erro de propósito — nunca devem fingir que autenticaram ou
+// publicaram algo no PNCP de verdade.
+
+async function chamarLoginPncp(_params: { login: string; senha: string }): Promise<{ jwt: string; expiraEm: Date }> {
+  throw new Error(
+    'Login na API do PNCP ainda não está disponível — aguardando login/senha oficiais do credenciamento junto ao Ministério da Gestão. Use o botão "Gerar CSV" enquanto isso.'
+  )
+}
+
+async function chamarPublicarPncp(_params: {
+  jwt: string
+  cnpjOrgao: string
   payload: Record<string, unknown>
 }): Promise<{ protocolo: string; respostaPncp: Record<string, unknown> }> {
-  throw new Error(
-    'Integração via API do PNCP ainda não está disponível — aguardando token/credenciais oficiais do PNCP. Use o botão "Gerar CSV" enquanto isso.'
-  )
+  throw new Error('Publicação via API do PNCP ainda não está disponível.')
+}
+
+// ── Obtém um JWT válido, reautenticando só se o cache expirou ────────────
+async function obterTokenJwt(config: NonNullable<Awaited<ReturnType<typeof prisma.integracaoPncp.findUnique>>>) {
+  const MARGEM_SEGURANCA_MS = 60_000 // renova 1 min antes de expirar, por segurança
+  if (config.tokenJwtCache && config.tokenJwtExpiraEm && config.tokenJwtExpiraEm.getTime() - MARGEM_SEGURANCA_MS > Date.now()) {
+    return config.tokenJwtCache
+  }
+  if (!config.loginPncp || !config.senhaCriptografada) {
+    throw new Error('Login e senha do PNCP não configurados.')
+  }
+  const senha = descriptografar(config.senhaCriptografada)
+  const { jwt, expiraEm } = await chamarLoginPncp({ login: config.loginPncp, senha })
+
+  await prisma.integracaoPncp.update({
+    where: { idOrganizacao: config.idOrganizacao },
+    data: { tokenJwtCache: jwt, tokenJwtExpiraEm: expiraEm },
+  })
+
+  return jwt
 }
 
 // ── Publicar um envio da fila via API — botão "Publicar via API" ─────────
@@ -81,8 +116,8 @@ export async function publicarViaApiPncp(idEnvio: string, params: { idOrganizaca
   if (!config || !config.ativo) {
     throw new Error('Integração via API do PNCP está desligada para esta organização. Ative em Configurações > PCA ou use o botão "Gerar CSV".')
   }
-  if (!config.tokenCriptografado || !config.idContratante) {
-    throw new Error('Integração via API do PNCP está ligada, mas as credenciais ainda não foram configuradas.')
+  if (!config.loginPncp || !config.senhaCriptografada) {
+    throw new Error('Integração via API do PNCP está ligada, mas login/senha ainda não foram configurados.')
   }
 
   const envio = await prisma.pncpEnvioPca.findFirst({ where: { id: idEnvio, idOrganizacao: params.idOrganizacao } })
@@ -91,11 +126,14 @@ export async function publicarViaApiPncp(idEnvio: string, params: { idOrganizaca
     throw new Error('Só é possível publicar via API envios pendentes ou em conferência')
   }
 
+  const org = await prisma.organizacao.findUnique({ where: { id: params.idOrganizacao } })
+  if (!org) throw new Error('Organização não encontrada')
+
   try {
-    const token = descriptografar(config.tokenCriptografado)
-    const resultado = await chamarApiPncp({
-      idContratante: config.idContratante,
-      token,
+    const jwt = await obterTokenJwt(config)
+    const resultado = await chamarPublicarPncp({
+      jwt,
+      cnpjOrgao: org.cnpj,
       payload: (envio.payload as Record<string, unknown>) ?? {},
     })
 

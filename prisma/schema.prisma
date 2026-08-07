@@ -1551,16 +1551,25 @@ model PncpEnvioPca {
 // Configuração opt-in em Configurações > PCA. O botão "Gerar CSV" no
 // Monitor PNCP (Tela 8) NUNCA depende deste registro e continua sempre
 // habilitado — isso aqui só liga um botão adicional "Publicar via API".
-// Mesmo com `ativo = true`, a publicação real só funciona quando o token
-// oficial do PNCP existir (ver nota em pncp-integration.service.ts).
+//
+// O PNCP não usa token fixo: a Terracap se credencia junto ao Ministério
+// da Gestão e recebe LOGIN + SENHA. O dbliciti autentica com essas
+// credenciais em POST /v1/usuarios/login e recebe um JWT (Bearer) de
+// curta duração — cacheado aqui (tokenJwtCache/tokenJwtExpiraEm) até
+// expirar, pra não logar de novo a cada publicação. Mesmo com `ativo =
+// true`, a publicação real só funciona quando login/senha oficiais
+// existirem (ver nota em integracao-pncp.service.ts).
 model IntegracaoPncp {
   id            String @id @default(uuid())
   idOrganizacao String @unique @map("id_organizacao")
 
   ativo Boolean @default(false) // toggle "Integração via API PNCP"
 
-  idContratante      String? @map("id_contratante")       // identificador do órgão no PNCP — não sigiloso
-  tokenCriptografado String? @map("token_criptografado")  // AES-256-GCM — nunca texto puro
+  loginPncp          String? @map("login_pncp")           // login recebido no credenciamento — não sigiloso
+  senhaCriptografada String? @map("senha_criptografada")  // AES-256-GCM — nunca texto puro
+
+  tokenJwtCache      String?   @map("token_jwt_cache")       // JWT (Bearer) obtido no último login — curta duração
+  tokenJwtExpiraEm   DateTime? @map("token_jwt_expira_em")
 
   ultimaPublicacaoEm  DateTime? @map("ultima_publicacao_em")
   ultimoResultado     String?   @map("ultimo_resultado")      // SUCESSO | ERRO

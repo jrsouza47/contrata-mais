@@ -30,7 +30,7 @@ export async function pncpRoutes(app: FastifyInstance) {
   // PUT /pca/pncp/integracao/:idOrganizacao — liga/desliga + salva credenciais
   app.put('/pca/pncp/integracao/:idOrganizacao', async (request, reply) => {
     const { idOrganizacao } = request.params as { idOrganizacao: string }
-    const body = request.body as { ativo: boolean; idContratante?: string; token?: string }
+    const body = request.body as { ativo: boolean; loginPncp?: string; senha?: string }
     try {
       return reply.send(await salvarIntegracaoPncp(idOrganizacao, body))
     } catch (err: any) { return reply.status(400).send({ erro: err.message }) }
