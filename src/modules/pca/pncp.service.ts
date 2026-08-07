@@ -17,7 +17,7 @@
 // ============================================================
 
 import prisma from '../../shared/prisma'
-import { PNCP_ENVIO_STATUS, PNCP_TIPO_ENVIO } from './pca.constants'
+import { PNCP_ENVIO_STATUS, PNCP_TIPO_ENVIO, PNCP_METODO_ENVIO } from './pca.constants'
 
 type TipoEnvio = typeof PNCP_TIPO_ENVIO[keyof typeof PNCP_TIPO_ENVIO]
 
@@ -137,11 +137,13 @@ export async function registrarErroEnvioPncp(id: string, params: { idOrganizacao
 }
 
 // ── Marcar CSV de referência como gerado (1 ou vários de uma vez) ────────
+// O botão "Gerar CSV" no Monitor PNCP continua sempre habilitado,
+// independente do toggle de integração via API estar ligado ou não.
 export async function marcarCsvGerado(ids: string[], params: { idOrganizacao: string; idUsuario: string }) {
   if (ids.length === 0) return { atualizados: 0 }
   const resultado = await prisma.pncpEnvioPca.updateMany({
     where: { id: { in: ids }, idOrganizacao: params.idOrganizacao },
-    data: { csvGeradoEm: new Date(), csvGeradoPor: params.idUsuario },
+    data: { csvGeradoEm: new Date(), csvGeradoPor: params.idUsuario, metodoEnvio: PNCP_METODO_ENVIO.CSV },
   })
   return { atualizados: resultado.count }
 }

@@ -115,6 +115,7 @@ model Organizacao {
   grupo                 Grupo?                @relation(fields: [idGrupo], references: [id])
   filiais               Filial[]
   centrosCusto          CentroCusto[]
+  integracaoPncp        IntegracaoPncp?
   categorias            Categoria[]
   itens                 ItemCatalogo[]
   alcadas               AlcadaAprovacao[]
@@ -1526,6 +1527,12 @@ model PncpEnvioPca {
   csvGeradoEm  DateTime? @map("csv_gerado_em")
   csvGeradoPor String?   @map("csv_gerado_por")
 
+  // Como esse envio foi de fato publicado no PNCP — preenchido só na
+  // confirmação (CSV manual, hoje o único caminho) ou na publicação via
+  // API oficial (quando a integração estiver disponível). Nulo = ainda
+  // não enviado. Não afeta o botão "Gerar CSV", que continua sempre ativo.
+  metodoEnvio  String?   @map("metodo_envio") // CSV | API
+
   criadoEm     DateTime @default(now()) @map("criado_em")
   atualizadoEm DateTime @updatedAt @map("atualizado_em")
 
@@ -1538,6 +1545,33 @@ model PncpEnvioPca {
   @@index([idOrganizacao])
   @@index([status])
   @@map("pncp_envio_pca")
+}
+
+// ── Integração via API oficial do PNCP (por organização) ──────────────────
+// Configuração opt-in em Configurações > PCA. O botão "Gerar CSV" no
+// Monitor PNCP (Tela 8) NUNCA depende deste registro e continua sempre
+// habilitado — isso aqui só liga um botão adicional "Publicar via API".
+// Mesmo com `ativo = true`, a publicação real só funciona quando o token
+// oficial do PNCP existir (ver nota em pncp-integration.service.ts).
+model IntegracaoPncp {
+  id            String @id @default(uuid())
+  idOrganizacao String @unique @map("id_organizacao")
+
+  ativo Boolean @default(false) // toggle "Integração via API PNCP"
+
+  idContratante      String? @map("id_contratante")       // identificador do órgão no PNCP — não sigiloso
+  tokenCriptografado String? @map("token_criptografado")  // AES-256-GCM — nunca texto puro
+
+  ultimaPublicacaoEm  DateTime? @map("ultima_publicacao_em")
+  ultimoResultado     String?   @map("ultimo_resultado")      // SUCESSO | ERRO
+  ultimaMensagemErro  String?   @map("ultima_mensagem_erro")
+
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  organizacao Organizacao @relation(fields: [idOrganizacao], references: [id])
+
+  @@map("integracao_pncp")
 }
 
 // ── Revisão / redimensionamento / atualização (janelas da norma) ─

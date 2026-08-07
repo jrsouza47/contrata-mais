@@ -62,6 +62,14 @@ export const PNCP_TIPO_ENVIO = {
   REVISAO: 'REVISAO',
 } as const
 
+// Como o envio foi de fato publicado no PNCP — CSV é o método atual
+// (sempre disponível); API é o método novo, opt-in por organização
+// (ver integracao-pncp.service.ts)
+export const PNCP_METODO_ENVIO = {
+  CSV: 'CSV',
+  API: 'API',
+} as const
+
 // Janela oficial de envio de demandas — 01/jan a 10/fev (norma, item 7)
 export function dentroJanelaEnvioDfd(data: Date = new Date()): boolean {
   const ano = data.getFullYear()

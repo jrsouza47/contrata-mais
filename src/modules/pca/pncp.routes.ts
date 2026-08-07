@@ -11,8 +11,39 @@ import {
   reenviarEnvioPncp,
   marcarCsvGerado,
 } from './pncp.service'
+import {
+  buscarIntegracaoPncp,
+  salvarIntegracaoPncp,
+  publicarViaApiPncp,
+} from './integracao-pncp.service'
 
 export async function pncpRoutes(app: FastifyInstance) {
+
+  // GET /pca/pncp/integracao/:idOrganizacao — lê o toggle + config (Configurações > PCA)
+  app.get('/pca/pncp/integracao/:idOrganizacao', async (request, reply) => {
+    const { idOrganizacao } = request.params as { idOrganizacao: string }
+    try {
+      return reply.send(await buscarIntegracaoPncp(idOrganizacao))
+    } catch (err: any) { return reply.status(500).send({ erro: err.message }) }
+  })
+
+  // PUT /pca/pncp/integracao/:idOrganizacao — liga/desliga + salva credenciais
+  app.put('/pca/pncp/integracao/:idOrganizacao', async (request, reply) => {
+    const { idOrganizacao } = request.params as { idOrganizacao: string }
+    const body = request.body as { ativo: boolean; idContratante?: string; token?: string }
+    try {
+      return reply.send(await salvarIntegracaoPncp(idOrganizacao, body))
+    } catch (err: any) { return reply.status(400).send({ erro: err.message }) }
+  })
+
+  // POST /pca/pncp/envios/:id/publicar-api — botão "Publicar via API" (Monitor PNCP)
+  app.post('/pca/pncp/envios/:id/publicar-api', async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { idOrganizacao, idUsuario } = request.body as { idOrganizacao: string; idUsuario: string }
+    try {
+      return reply.send(await publicarViaApiPncp(id, { idOrganizacao, idUsuario }))
+    } catch (err: any) { return reply.status(400).send({ erro: err.message }) }
+  })
 
   // GET /pca/pncp/envios?idOrganizacao=&status=&tipoEnvio=&idPlano=
   app.get('/pca/pncp/envios', async (request, reply) => {
