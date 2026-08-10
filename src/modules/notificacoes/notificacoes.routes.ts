@@ -34,7 +34,7 @@ export async function notificacoesRoutes(app: FastifyInstance) {
 
     const mensagem =
       '*Solicitação de Cadastro de Item*\n' +
-      '_dbliciti Portal de Compras_\n\n' +
+      '_Contrata+ Portal de Compras_\n\n' +
       '*Solicitante:* ' + solicitante + '\n' +
       '*Organização:* ' + nomeOrg + '\n\n' +
       '*Descrição do item:*\n' + descricao

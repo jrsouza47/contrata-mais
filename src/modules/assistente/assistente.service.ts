@@ -114,7 +114,7 @@ async function coletarContexto(idOrganizacao: string): Promise<string> {
   ).join(', ')
 
   return `
-=== CONTEXTO DO SISTEMA — Portal de Compras dbliciti ===
+=== CONTEXTO DO SISTEMA — Portal de Compras Contrata+ ===
 Data atual: ${agora.toLocaleDateString('pt-BR')}
 
 PEDIDOS:
@@ -153,7 +153,7 @@ ALERTAS:
 `.trim()
 }
 
-const SYSTEM_PROMPT = `Você é o Assistente do Portal de Compras dbliciti — um sistema de gestão de compras públicas e privadas.
+const SYSTEM_PROMPT = `Você é o Assistente do Portal de Compras Contrata+ — um sistema de gestão de compras públicas e privadas.
 
 Seu papel é ajudar compradores, gestores e diretores a:
 - Consultar dados operacionais (pedidos, cotações, contratos, fornecedores)

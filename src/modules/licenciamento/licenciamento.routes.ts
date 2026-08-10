@@ -38,7 +38,7 @@ function autenticar(request: any): JwtPayload {
 function exigirAdminDbliciti(request: any): JwtPayload {
   const usuario = autenticar(request)
   if (usuario.perfil !== PERFIL_ADMIN_DBLICITI) {
-    const err: any = new Error('Acesso restrito ao Administrador Dbliciti')
+    const err: any = new Error('Acesso restrito ao Administrador Contrata+')
     err.status = 403
     throw err
   }
