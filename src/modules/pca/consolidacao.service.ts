@@ -47,7 +47,7 @@ export async function listarCandidatosConsolidacao(idOrganizacao: string, idPlan
     where: { idOrganizacao, idPlano, status: DFD_STATUS.ENVIADO, idItemPca: null },
     include: {
       solicitante: { select: { id: true, nome: true } },
-      centroCusto: { select: { id: true, codigo: true, descricao: true } },
+      centroCusto: { select: { id: true, codigo: true, nome: true } },
       sugestoesIa: { where: { tipo: { in: ['DUPLICIDADE', 'AGREGACAO'] } } },
     },
     orderBy: [{ tipoObjeto: 'asc' }, { descricaoObjeto: 'asc' }],

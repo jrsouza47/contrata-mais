@@ -1,10 +1,10 @@
 // ============================================================
-// SERVICE — Escopo de área (Centro de Custo) por usuário
+// SERVICE — Escopo de área (Área Organizacional) por usuário
 // backend/src/modules/pca/escopo-area.service.ts
 //
 // Regra: Gestor, Solicitante e Operador só enxergam Demandas/Itens do PCA
-// da sua área (Centro de Custo) e de tudo que está hierarquicamente abaixo
-// dela (usando o prefixo de `estruturaBenner`). Os demais perfis
+// da sua área e de tudo que está hierarquicamente abaixo dela (usando a
+// relação real de pai/filho de AreaOrganizacional). Os demais perfis
 // (Administrador, Comprador, Aprovador, Auditor) não são restritos.
 //
 // Um Item do PCA consolidado pode reunir Demandas de vários setores —
@@ -17,7 +17,7 @@ import prisma from '../../shared/prisma'
 export const PERFIS_RESTRITOS_POR_AREA = ['Gestor', 'Solicitante', 'Operador']
 
 /**
- * Retorna a lista de IDs de Centro de Custo visíveis para o usuário, ou
+ * Retorna a lista de IDs de Área Organizacional visíveis para o usuário, ou
  * `null` se o perfil não é restrito (enxerga tudo, sem filtro).
  *
  * Perfil restrito sem área configurada => retorna [] (não vê nada — padrão
@@ -37,38 +37,57 @@ export async function obterEscopoCentroCusto(idUsuario: string | undefined): Pro
   if (!PERFIS_RESTRITOS_POR_AREA.includes(usuario.perfil)) return null
   if (!usuario.idCentroCustoArea) return []
 
-  const centroBase = await prisma.centroCusto.findUnique({
+  const areaBase = await prisma.areaOrganizacional.findUnique({
     where: { id: usuario.idCentroCustoArea },
-    select: { id: true, estruturaBenner: true, idOrganizacao: true },
+    select: { id: true, idOrganizacao: true },
   })
-  if (!centroBase) return []
+  if (!areaBase) return []
 
-  // Sem estruturaBenner (item não veio do Benner ou é raiz sem caminho
-  // definido) — só dá pra garantir o próprio nó, sem descendentes.
-  if (!centroBase.estruturaBenner) return [centroBase.id]
-
-  const descendentes = await prisma.centroCusto.findMany({
-    where: {
-      idOrganizacao: centroBase.idOrganizacao,
-      estruturaBenner: { startsWith: centroBase.estruturaBenner },
-    },
-    select: { id: true },
+  // Busca todas as áreas da organização pra montar o mapa pai → filhos em
+  // memória. Mais simples e robusto que uma CTE recursiva no banco, e o
+  // volume de áreas por organização (dezenas a poucas centenas) é pequeno
+  // o suficiente pra isso ser barato.
+  const todasAreas = await prisma.areaOrganizacional.findMany({
+    where: { idOrganizacao: areaBase.idOrganizacao },
+    select: { id: true, idPai: true },
   })
 
-  const ids = new Set<string>([centroBase.id, ...descendentes.map(d => d.id)])
+  const filhosPorPai = new Map<string, string[]>()
+  for (const a of todasAreas) {
+    if (!a.idPai) continue
+    const lista = filhosPorPai.get(a.idPai) ?? []
+    lista.push(a.id)
+    filhosPorPai.set(a.idPai, lista)
+  }
+
+  // Percorre a árvore a partir da área do usuário, coletando todos os
+  // descendentes. O `ids.has` evita loop infinito mesmo se, por engano,
+  // algum dado tivesse uma referência circular de id_pai.
+  const ids = new Set<string>([areaBase.id])
+  const pilha = [areaBase.id]
+  while (pilha.length > 0) {
+    const atual = pilha.pop()!
+    for (const filhoId of filhosPorPai.get(atual) ?? []) {
+      if (!ids.has(filhoId)) {
+        ids.add(filhoId)
+        pilha.push(filhoId)
+      }
+    }
+  }
+
   return [...ids]
 }
 
-/** Monta a cláusula Prisma `where` pra filtrar Dfd por centro de custo, a
- * partir do escopo já calculado. `null` = sem filtro (não restrito). */
+/** Monta a cláusula Prisma `where` pra filtrar Dfd por área organizacional,
+ * a partir do escopo já calculado. `null` = sem filtro (não restrito). */
 export function whereDfdPorEscopo(escopo: string[] | null) {
   if (escopo === null) return {}
   return { idCentroCusto: { in: escopo } }
 }
 
-/** Mesma ideia, mas pra Item do PCA — que não tem centro de custo direto,
- * e sim através das Demandas (Dfd) que foram consolidadas nele. Visível
- * se PELO MENOS UMA demanda do item estiver no escopo. */
+/** Mesma ideia, mas pra Item do PCA — que não tem área organizacional
+ * direta, e sim através das Demandas (Dfd) que foram consolidadas nele.
+ * Visível se PELO MENOS UMA demanda do item estiver no escopo. */
 export function whereItemPcaPorEscopo(escopo: string[] | null) {
   if (escopo === null) return {}
   return { dfdsOrigem: { some: { idCentroCusto: { in: escopo } } } }

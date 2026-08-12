@@ -115,6 +115,7 @@ model Organizacao {
   grupo                 Grupo?                @relation(fields: [idGrupo], references: [id])
   filiais               Filial[]
   centrosCusto          CentroCusto[]
+  areasOrganizacionais  AreaOrganizacional[]
   integracaoPncp        IntegracaoPncp?
   categorias            Categoria[]
   itens                 ItemCatalogo[]
@@ -205,7 +206,9 @@ model Usuario {
   idCentroCustoArea String? @map("id_centro_custo_area")
 
   organizacao                 Organizacao             @relation(fields: [idOrganizacao], references: [id])
-  centroCustoArea              CentroCusto?            @relation("UsuarioCentroCustoArea", fields: [idCentroCustoArea], references: [id])
+  // Aponta pra AreaOrganizacional (não mais CentroCusto) — nome do campo
+  // e da coluna mantidos pra não exigir mudanças em cadeia no código.
+  centroCustoArea              AreaOrganizacional?     @relation("UsuarioCentroCustoArea", fields: [idCentroCustoArea], references: [id])
   organizacoes                UsuarioOrganizacao[]
   substituto                  Usuario?                @relation("Substituto", fields: [idSubstituto], references: [id])
   substituidos                Usuario[]               @relation("Substituto")
@@ -280,6 +283,35 @@ model UsuarioFilial {
   @@map("usuario_filial")
 }
 
+// ─────────────────────────────────────────────
+// Área Organizacional — hierarquia real (id_pai), usada como
+// fonte única de verdade para: (1) a área do usuário
+// (restrição de escopo do PCA) e (2) a área de cada Demanda.
+// Substitui, para esses dois usos, o antigo CentroCusto (que
+// segue existindo só para o módulo de Pedidos).
+// ─────────────────────────────────────────────
+model AreaOrganizacional {
+  id            String   @id @default(uuid())
+  idOrganizacao String   @map("id_organizacao")
+  codigo        String
+  apelido       String   @default("")
+  nome          String
+  nivel         Int      @default(1) // 1=empresa 2=diretoria 3=gerência 4=núcleo
+  idPai         String?  @map("id_pai")
+  ativo         Boolean  @default(true)
+  criadoEm      DateTime @default(now()) @map("criado_em")
+  atualizadoEm  DateTime @default(now()) @map("atualizado_em")
+
+  organizacao  Organizacao          @relation(fields: [idOrganizacao], references: [id], onDelete: Cascade)
+  pai          AreaOrganizacional?  @relation("AreaOrganizacionalPai", fields: [idPai], references: [id])
+  filhas       AreaOrganizacional[] @relation("AreaOrganizacionalPai")
+  usuariosArea Usuario[]            @relation("UsuarioCentroCustoArea")
+  dfds         Dfd[]
+
+  @@unique([idOrganizacao, codigo])
+  @@map("area_organizacional")
+}
+
 model CentroCusto {
   id            String  @id @default(uuid())
   idOrganizacao String  @map("id_organizacao")
@@ -301,8 +333,9 @@ model CentroCusto {
 
   organizacao Organizacao @relation(fields: [idOrganizacao], references: [id])
   pedidos     Pedido[]
-  dfds        Dfd[]
-  usuariosArea Usuario[] @relation("UsuarioCentroCustoArea")
+  // dfds e usuariosArea removidos: a partir desta migração, a área da
+  // Demanda e a área do usuário usam AreaOrganizacional, não CentroCusto.
+  // CentroCusto segue em uso apenas pelo módulo de Pedidos (M2).
 
   @@unique([idOrganizacao, codigoBenner])
   @@map("centro_custo")
@@ -1302,7 +1335,9 @@ model Dfd {
   organizacao   Organizacao            @relation(fields: [idOrganizacao], references: [id])
   plano         PlanoContratacaoAnual  @relation(fields: [idPlano], references: [id])
   solicitante   Usuario                @relation("DfdSolicitante", fields: [idSolicitante], references: [id])
-  centroCusto   CentroCusto?           @relation(fields: [idCentroCusto], references: [id])
+  // Aponta pra AreaOrganizacional (não mais CentroCusto) — nome do campo
+  // e da coluna mantidos pra não exigir mudanças em cadeia no código.
+  centroCusto   AreaOrganizacional?    @relation(fields: [idCentroCusto], references: [id])
   itemCatalogo  ItemCatalogo?          @relation(fields: [idItemCatalogo], references: [id])
   itemVinculado Dfd?                   @relation("DfdVinculado", fields: [idItemVinculado], references: [id])
   dependentes   Dfd[]                  @relation("DfdVinculado")

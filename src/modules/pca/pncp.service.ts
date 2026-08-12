@@ -80,7 +80,7 @@ export async function listarEnviosPncp(
           dfdsOrigem: {
             select: {
               codigoSistemaCorporativo: true,
-              centroCusto: { select: { id: true, codigo: true, descricao: true } },
+              centroCusto: { select: { id: true, codigo: true, nome: true } },
             },
           },
         },
