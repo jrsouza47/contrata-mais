@@ -1747,3 +1747,43 @@ model OrganizacaoModulo {
   @@index([idOrganizacao])
   @@map("organizacao_modulo")
 }
+
+// ─────────────────────────────────────────────
+// Perfil e Permissões — catálogo GLOBAL (não por organização),
+// gerenciado pelo Administrador Contrata+ na mesma área das
+// Licenças (/admin/perfis). Substitui a matriz hoje hardcoded em
+// frontend/lib/permissoes.ts.
+//
+// Usuario.perfil continua sendo um TEXTO livre (não uma FK pra cá)
+// — decisão deliberada pra não precisar tocar em todo o código que
+// hoje compara `perfil === 'Gestor'` etc. O nome do Perfil aqui
+// deve bater com o texto usado em Usuario.perfil por convenção.
+// ─────────────────────────────────────────────
+model Perfil {
+  id           String   @id @default(uuid())
+  nome         String   @unique
+  descricao    String?
+  sistemico    Boolean  @default(false) // perfis originais do sistema — não podem ser excluídos, só ter permissões editadas
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @default(now()) @map("atualizado_em")
+
+  permissoes PermissaoPerfil[]
+
+  @@map("perfil")
+}
+
+model PermissaoPerfil {
+  id        String  @id @default(uuid())
+  idPerfil  String  @map("id_perfil")
+  modulo    String
+  processo  String
+  tipo      String  // 'acao' | 'consulta'
+  concedido Boolean @default(false)
+
+  perfil Perfil @relation(fields: [idPerfil], references: [id], onDelete: Cascade)
+
+  @@unique([idPerfil, modulo, processo])
+  @@index([idPerfil])
+  @@map("permissao_perfil")
+}

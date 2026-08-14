@@ -19,7 +19,7 @@ import {
 } from './licenciamento.service'
 
 // Extrai e valida o JWT do header Authorization. Lança erro com .status se algo estiver errado.
-function autenticar(request: any): JwtPayload {
+export function autenticar(request: any): JwtPayload {
   const authHeader = request.headers.authorization
   if (!authHeader?.startsWith('Bearer ')) {
     const err: any = new Error('Token nao fornecido')
@@ -35,7 +35,7 @@ function autenticar(request: any): JwtPayload {
   }
 }
 
-function exigirAdminDbliciti(request: any): JwtPayload {
+export function exigirAdminDbliciti(request: any): JwtPayload {
   const usuario = autenticar(request)
   if (usuario.perfil !== PERFIL_ADMIN_DBLICITI) {
     const err: any = new Error('Acesso restrito ao Administrador Contrata+')

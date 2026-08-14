@@ -9,6 +9,7 @@ import { catalogoCatmatRoutes } from './modules/catalogo/catalogo.catmat.routes'
 import { configuracoesRoutes } from './modules/configuracoes/configuracoes.routes'
 import { hierarquiaRoutes } from './modules/hierarquia/hierarquia.routes'
 import { areaOrganizacionalRoutes } from './modules/area-organizacional/area-organizacional.routes'
+import { perfilRoutes } from './modules/perfil/perfil.routes'
 import { catalogoImportacaoRoutes } from './modules/catalogo/catalogo.importacao.routes'
 import { pedidoRoutes } from './modules/pedido/routes/pedido.routes'
 import { fornecedorRoutes } from './modules/fornecedor/routes/fornecedor.routes'
@@ -80,6 +81,7 @@ app.register(async (instance) => {
 app.register(configuracoesRoutes)
 app.register(hierarquiaRoutes)
 app.register(areaOrganizacionalRoutes)
+app.register(perfilRoutes)
 
 // M2 — Pedidos de Compra (licenciado por organização)
 app.register(async (instance) => {
