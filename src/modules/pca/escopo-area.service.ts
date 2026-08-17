@@ -31,10 +31,25 @@ export async function obterEscopoCentroCusto(idUsuario: string | undefined): Pro
 
   const usuario = await prisma.usuario.findUnique({
     where: { id: idUsuario },
-    select: { perfil: true, idCentroCustoArea: true, idOrganizacao: true },
+    select: {
+      perfil: true,
+      idCentroCustoArea: true,
+      idOrganizacao: true,
+      // Perfis adicionais (além do principal) — usuário pode acumular
+      // vários perfis ao mesmo tempo (ex: Gestor + Solicitante).
+      perfis: { select: { perfil: { select: { nome: true } } } },
+    },
   })
   if (!usuario) return null
-  if (!PERFIS_RESTRITOS_POR_AREA.includes(usuario.perfil)) return null
+
+  // Junta o perfil principal com os perfis adicionais. Se QUALQUER um
+  // deles não for restrito por área, o usuário enxerga tudo (união das
+  // visibilidades, não interseção) — não faz sentido restringir alguém
+  // que também é Administrador só porque ele também é Solicitante.
+  const nomesPerfis = new Set<string>([usuario.perfil, ...usuario.perfis.map(p => p.perfil.nome)])
+  const algumIrrestrito = [...nomesPerfis].some(nome => !PERFIS_RESTRITOS_POR_AREA.includes(nome))
+  if (algumIrrestrito) return null
+
   if (!usuario.idCentroCustoArea) return []
 
   const areaBase = await prisma.areaOrganizacional.findUnique({

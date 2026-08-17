@@ -249,6 +249,13 @@ model Usuario {
   relatoriosPcaGerados      RelatorioPca[]
   movimentosSaldoPca        MovimentoSaldoItemPca[]
 
+  // Perfis adicionais do usuário (além do perfil principal em Usuario.perfil).
+  // Usuario.perfil continua sendo o "perfil principal" — usado no login, JWT
+  // e nas checagens antigas (auth, organizacao, licenciamento). Esta lista é
+  // a fonte de verdade para telas que precisam considerar TODOS os perfis do
+  // usuário (ex: escopo de área do PCA).
+  perfis UsuarioPerfil[]
+
   @@map("usuario")
 }
 
@@ -1769,8 +1776,37 @@ model Perfil {
   atualizadoEm DateTime @default(now()) @map("atualizado_em")
 
   permissoes PermissaoPerfil[]
+  usuarios   UsuarioPerfil[]
 
   @@map("perfil")
+}
+
+// ─────────────────────────────────────────────
+// UsuarioPerfil — permite que um usuário tenha MAIS DE UM perfil ao
+// mesmo tempo (ex: Gestor + Solicitante). Usuario.perfil (texto livre,
+// acima) continua existindo como "perfil principal" e não é substituído
+// por esta tabela — as checagens antigas de login/JWT/autorização
+// continuam lendo Usuario.perfil normalmente.
+//
+// Esta tabela é a fonte de verdade para telas que precisam somar as
+// permissões/escopo de TODOS os perfis do usuário — a começar pelo
+// escopo de área (Centro de Custo) do PCA. Regra adotada: quando os
+// perfis do usuário têm regras de escopo diferentes, prevalece o
+// escopo mais amplo entre eles (união, não interseção).
+// ─────────────────────────────────────────────
+model UsuarioPerfil {
+  id        String   @id @default(uuid())
+  idUsuario String   @map("id_usuario")
+  idPerfil  String   @map("id_perfil")
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  usuario Usuario @relation(fields: [idUsuario], references: [id], onDelete: Cascade)
+  perfil  Perfil  @relation(fields: [idPerfil], references: [id], onDelete: Cascade)
+
+  @@unique([idUsuario, idPerfil])
+  @@index([idUsuario])
+  @@index([idPerfil])
+  @@map("usuario_perfil")
 }
 
 model PermissaoPerfil {

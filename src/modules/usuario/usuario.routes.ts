@@ -49,11 +49,15 @@ export async function usuarioRoutes(app: FastifyInstance) {
         idCentroCustoArea: true,
         ativo: true,
         criadoEm: true,
+        perfis: { select: { idPerfil: true, perfil: { select: { id: true, nome: true } } } },
       },
     })
     // Remove duplicatas (usuario pode aparecer pelos dois critérios)
     const vistos = new Set<string>()
-    const unicos = usuarios.filter(u => { if (vistos.has(u.id)) return false; vistos.add(u.id); return true })
+    const unicos = usuarios
+      .filter(u => { if (vistos.has(u.id)) return false; vistos.add(u.id); return true })
+      // achata "perfis" pra lista simples de nomes, mais fácil de consumir no front
+      .map(u => ({ ...u, perfis: u.perfis.map(p => p.perfil) }))
     return reply.send(unicos)
   })
 
@@ -73,10 +77,11 @@ export async function usuarioRoutes(app: FastifyInstance) {
         ativo: true,
         criadoEm: true,
         idOrganizacao: true,
+        perfis: { select: { idPerfil: true, perfil: { select: { id: true, nome: true } } } },
       },
     })
     if (!usuario) return reply.status(404).send({ error: 'Usuário não encontrado' })
-    return reply.send(usuario)
+    return reply.send({ ...usuario, perfis: usuario.perfis.map(p => p.perfil) })
   })
 
   // POST /usuarios — cria usuário com senha inicial automática
@@ -87,6 +92,10 @@ export async function usuarioRoutes(app: FastifyInstance) {
       email: string
       login?: string | null
       perfil: string
+      // IDs de Perfil (tabela `perfil`) que o usuário acumula, além do
+      // principal acima. Opcional — se não vier, o usuário fica só com
+      // o perfil principal (comportamento igual ao de antes).
+      perfis?: string[]
       alcadaValor?: number
       idCentroCustoArea?: string | null
     }
@@ -149,6 +158,22 @@ export async function usuarioRoutes(app: FastifyInstance) {
       },
     })
 
+    // Grava os perfis adicionais na tabela usuario_perfil. Se o front não
+    // mandou a lista (telas antigas que ainda não migraram pro multi-seleção),
+    // faz o mesmo fallback do backfill: casa pelo nome do perfil principal,
+    // pra o usuário já nascer com pelo menos 1 linha na tabela nova.
+    let idsPerfis = body.perfis?.filter(Boolean) ?? []
+    if (idsPerfis.length === 0) {
+      const perfilPrincipal = await prisma.perfil.findUnique({ where: { nome: body.perfil } })
+      if (perfilPrincipal) idsPerfis = [perfilPrincipal.id]
+    }
+    if (idsPerfis.length > 0) {
+      await prisma.usuarioPerfil.createMany({
+        data: idsPerfis.map(idPerfil => ({ idUsuario: usuario.id, idPerfil })),
+        skipDuplicates: true,
+      })
+    }
+
     // Retorna o usuário + senha inicial para o admin repassar
     return reply.status(201).send({
       ...usuario,
@@ -164,6 +189,10 @@ export async function usuarioRoutes(app: FastifyInstance) {
       email?: string
       login?: string | null
       perfil?: string
+      // Se vier (mesmo que array vazio []), SUBSTITUI por completo a lista
+      // de perfis adicionais do usuário. Se vier undefined (campo nem
+      // enviado), não mexe nos perfis adicionais existentes.
+      perfis?: string[]
       alcadaValor?: number
       idCentroCustoArea?: string | null
       ativo?: boolean
@@ -196,10 +225,28 @@ export async function usuarioRoutes(app: FastifyInstance) {
       body.login = loginLimpo
     }
 
+    const { perfis: idsPerfis, ...dadosUsuario } = body
+
     const usuario = await prisma.usuario.update({
       where: { id },
-      data: body,
+      data: dadosUsuario,
     })
+
+    // Só mexe nos perfis adicionais se o campo foi enviado (mesmo que
+    // vazio — nesse caso o admin quis remover todos os adicionais e
+    // deixar só o perfil principal). Substitui a lista inteira.
+    if (idsPerfis !== undefined) {
+      await prisma.$transaction([
+        prisma.usuarioPerfil.deleteMany({ where: { idUsuario: id } }),
+        ...(idsPerfis.length > 0
+          ? [prisma.usuarioPerfil.createMany({
+              data: idsPerfis.filter(Boolean).map(idPerfil => ({ idUsuario: id, idPerfil })),
+              skipDuplicates: true,
+            })]
+          : []),
+      ])
+    }
+
     return reply.send(usuario)
   })
 
